@@ -7,7 +7,6 @@ import net.minecraft.text.Text;
 
 public final class ZyonScreen extends Screen {
     private static final int PANEL = 0xE9161B29;
-    private static final int CARD = 0xE922293A;
     private int left, top;
 
     public ZyonScreen() { super(Text.literal("Zyon Client")); }
@@ -46,15 +45,14 @@ public final class ZyonScreen extends Screen {
     private static String onOff(boolean v) { return v ? "ON" : "OFF"; }
 
     @Override
-    public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
-        renderBackground(ctx, mouseX, mouseY, delta);
+    public void renderBackground(DrawContext ctx, int mouseX, int mouseY, float delta) {
+        super.renderBackground(ctx, mouseX, mouseY, delta);
         ctx.fill(left, top, left + 330, top + 250, PANEL);
         ctx.fill(left, top, left + 330, top + 34, 0xFF252E43);
         ctx.drawText(textRenderer, "ZYON CLIENT", left + 16, top + 11, 0xFFFFFFFF, false);
         ctx.drawText(textRenderer, "DISCOVERY  /  1.21.11", left + 205, top + 12, 0xFF9AAAC7, false);
         ctx.fill(left + 12, top + 42, left + 318, top + 43, 0x6654D6FF);
-        super.render(ctx, mouseX, mouseY, delta);
-        ctx.drawText(textRenderer, "Right Shift  •  fechar", left + 16, top + 232, 0xFF9AAAC7, false);
+        ctx.drawText(textRenderer, "Right Shift  -  fechar", left + 16, top + 232, 0xFF9AAAC7, false);
     }
 
     @Override
