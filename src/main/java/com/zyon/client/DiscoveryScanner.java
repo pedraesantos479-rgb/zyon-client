@@ -43,7 +43,9 @@ public final class DiscoveryScanner {
     private void inspectChunk(WorldChunk chunk) {
         int containers = 0, hoppers = 0, redstone = 0, amethyst = 0, machinery = 0;
         BlockPos.Mutable pos = new BlockPos.Mutable();
-        for (int y = chunk.getBottomY(); y < chunk.getTopY(); y += 1) {
+        int bottomY = chunk.getBottomY();
+        int topY = bottomY + chunk.getHeight();
+        for (int y = bottomY; y < topY; y += 1) {
             for (int x = 0; x < 16; x++) {
                 for (int z = 0; z < 16; z++) {
                     pos.set(chunk.getPos().getStartX() + x, y, chunk.getPos().getStartZ() + z);
