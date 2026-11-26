@@ -20,6 +20,12 @@ public final class DiscoverySettings {
     public int crystalRange = 5;
     public int crystalDelay = 2;
     public boolean autoObsidian = false;
+    public boolean autoTotem = false;
+    public int totemHealth = 0;          // 0 = sempre
+    public boolean cpvpAll = false;      // crystal + obsidian + totem juntos
+    public int minTargetDamage = 4;
+    public int maxSelfDamage = 8;
+    public int cpvpSpeed = 6;            // 1..10 (barra de velocidade)
 
     // Combate 2
     public boolean triggerBot = false;
@@ -36,6 +42,8 @@ public final class DiscoverySettings {
     public boolean autoEat = false;
     public boolean autoRefill = false;
     public boolean autoRespawn = false;
+    public boolean autoBridge = false;
+    public int bridgeSpeed = 8;          // 1..10
     public boolean fullbright = false;
 
     // HUD

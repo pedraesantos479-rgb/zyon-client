@@ -1,5 +1,6 @@
 package com.zyon.client;
 
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
@@ -8,11 +9,14 @@ import net.minecraft.text.Text;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BooleanSupplier;
+import java.util.function.IntConsumer;
+import java.util.function.IntFunction;
+import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 
 public final class ZyonScreen extends Screen {
     private static final int W = 410, H = 240, HEADER = 34, SIDE = 88, ROW_H = 28, PER_COL = 7;
-    private static final int TAB_STEP = 30, TAB_H = 24;
+    private static final int TAB_STEP = 27, TAB_H = 22;
     private static final int BG = 0xF00B0E17;
     private static final int SIDEBG = 0xFF0F1320;
     private static final int CARD = 0xFF161B2B;
@@ -23,42 +27,51 @@ public final class ZyonScreen extends Screen {
     private static final int OFF = 0xFF3A4156;
     private static final int TEXT = 0xFFE6E9F2;
     private static final int DIM = 0xFF7F889D;
-    private static final String[] TABS = {"Combate", "Jogador", "Visual", "HUD", "CPvP", "Scanner"};
-    private static final String[] ICONS = {"C", "J", "V", "H", "P", "S"};
+    private static final String[] TABS = {"Combate", "Crystal", "Jogador", "Visual", "HUD", "CPvP HUD", "Scanner"};
+    private static final String[] ICONS = {"C", "X", "J", "V", "H", "P", "S"};
     private static final int[] ICON_COLORS = {
-            0xFFEF4444, 0xFF34D399, 0xFF60A5FA, 0xFFFBBF24, 0xFFF472B6, 0xFFA78BFA};
+            0xFFEF4444, 0xFFF97316, 0xFF34D399, 0xFF60A5FA, 0xFFFBBF24, 0xFFF472B6, 0xFFA78BFA};
 
     private static int tab = 0;
     private int left, top;
 
     private static final class Row {
         final String name, desc;
-        final BooleanSupplier on;
-        final Supplier<String> value;
+        final BooleanSupplier on;            // interruptor
+        final Supplier<String> value;        // ciclo
         final Runnable click;
+        final IntSupplier geti;              // barra
+        final IntConsumer seti;
+        final IntFunction<String> fmt;
+        final int min, max, step;
 
-        Row(String name, String desc, BooleanSupplier on, Supplier<String> value, Runnable click) {
+        Row(String name, String desc, BooleanSupplier on, Supplier<String> value, Runnable click,
+            IntSupplier geti, IntConsumer seti, IntFunction<String> fmt, int min, int max, int step) {
             this.name = name;
             this.desc = desc;
             this.on = on;
             this.value = value;
             this.click = click;
+            this.geti = geti;
+            this.seti = seti;
+            this.fmt = fmt;
+            this.min = min;
+            this.max = max;
+            this.step = step;
         }
     }
 
     private static Row toggle(String name, String desc, BooleanSupplier get, Runnable flip) {
-        return new Row(name, desc, get, null, flip);
+        return new Row(name, desc, get, null, flip, null, null, null, 0, 0, 1);
     }
 
     private static Row cycle(String name, String desc, Supplier<String> val, Runnable next) {
-        return new Row(name, desc, null, val, next);
+        return new Row(name, desc, null, val, next, null, null, null, 0, 0, 1);
     }
 
-    private static int next(int cur, int[] opts) {
-        for (int i = 0; i < opts.length; i++) {
-            if (opts[i] == cur) return opts[(i + 1) % opts.length];
-        }
-        return opts[0];
+    private static Row slider(String name, int min, int max, int step, IntSupplier get, IntConsumer set,
+                              IntFunction<String> fmt) {
+        return new Row(name, "", null, null, null, get, set, fmt, min, max, step);
     }
 
     private List<Row> rows() {
@@ -67,26 +80,29 @@ public final class ZyonScreen extends Screen {
         switch (tab) {
             case 0 -> {
                 r.add(toggle("KillAura", "Ataca o alvo mais perto", () -> s.killAura, () -> s.killAura = !s.killAura));
-                r.add(cycle("Alcance KillAura", "Distancia do ataque", () -> s.killAuraRange + " bl",
-                        () -> s.killAuraRange = next(s.killAuraRange, new int[]{3, 4, 5, 6})));
+                r.add(slider("Alcance KillAura", 3, 6, 1, () -> s.killAuraRange, v -> s.killAuraRange = v, v -> v + " bl"));
                 r.add(toggle("So jogadores", "Ignora mobs", () -> s.killAuraPlayersOnly,
                         () -> s.killAuraPlayersOnly = !s.killAuraPlayersOnly));
-                r.add(toggle("Auto Crystal", "Poe e quebra crystals", () -> s.autoCrystal, () -> s.autoCrystal = !s.autoCrystal));
-                r.add(cycle("Alcance Crystal", "Distancia do crystal", () -> s.crystalRange + " bl",
-                        () -> s.crystalRange = next(s.crystalRange, new int[]{3, 4, 5, 6})));
-                r.add(cycle("Delay Crystal", "Espera entre acoes", () -> s.crystalDelay + " tk",
-                        () -> s.crystalDelay = next(s.crystalDelay, new int[]{0, 1, 2, 3, 5})));
-                r.add(toggle("Auto Obsidian", "Poe a base do crystal", () -> s.autoObsidian, () -> s.autoObsidian = !s.autoObsidian));
                 r.add(toggle("TriggerBot", "Ataca ao mirar", () -> s.triggerBot, () -> s.triggerBot = !s.triggerBot));
                 r.add(toggle("AutoClicker", "Clica segurando o botao", () -> s.autoClicker, () -> s.autoClicker = !s.autoClicker));
-                r.add(cycle("CPS Clicker", "Cliques por segundo", () -> s.autoClickerCps + " cps",
-                        () -> s.autoClickerCps = next(s.autoClickerCps, new int[]{6, 8, 10, 12, 15})));
+                r.add(slider("CPS Clicker", 4, 20, 2, () -> s.autoClickerCps, v -> s.autoClickerCps = v, v -> v + " cps"));
                 r.add(toggle("Aim Assist", "Ajuda a mirar", () -> s.aimAssist, () -> s.aimAssist = !s.aimAssist));
-                r.add(cycle("Forca Aim", "Intensidade da ajuda", () -> s.aimStrength + "%",
-                        () -> s.aimStrength = next(s.aimStrength, new int[]{10, 20, 30, 50})));
+                r.add(slider("Forca Aim", 5, 50, 5, () -> s.aimStrength, v -> s.aimStrength = v, v -> v + "%"));
                 r.add(toggle("Hit Sounds", "Som ao acertar", () -> s.hitSounds, () -> s.hitSounds = !s.hitSounds));
             }
             case 1 -> {
+                r.add(toggle("CPvP Tudo-em-1", "Obsidian + Crystal", () -> s.cpvpAll, () -> s.cpvpAll = !s.cpvpAll));
+                r.add(toggle("Auto Crystal", "Poe e quebra crystals", () -> s.autoCrystal, () -> s.autoCrystal = !s.autoCrystal));
+                r.add(toggle("Auto Obsidian", "Poe a base do crystal", () -> s.autoObsidian, () -> s.autoObsidian = !s.autoObsidian));
+                r.add(slider("Velocidade", 1, 10, 1, () -> s.cpvpSpeed, v -> s.cpvpSpeed = v, v -> v + "/10"));
+                r.add(slider("Alcance", 3, 6, 1, () -> s.crystalRange, v -> s.crystalRange = v, v -> v + " bl"));
+                r.add(slider("Dano minimo", 1, 12, 1, () -> s.minTargetDamage, v -> s.minTargetDamage = v, v -> v + " hp"));
+                r.add(slider("Dano max (voce)", 2, 20, 2, () -> s.maxSelfDamage, v -> s.maxSelfDamage = v, v -> v + " hp"));
+                r.add(toggle("Auto Totem", "Totem na mao", () -> s.autoTotem, () -> s.autoTotem = !s.autoTotem));
+                r.add(slider("Totem quando", 0, 20, 2, () -> s.totemHealth, v -> s.totemHealth = v,
+                        v -> v == 0 ? "sempre" : "<= " + v));
+            }
+            case 2 -> {
                 r.add(toggle("Auto Sprint", "Corre sozinho", () -> s.autoSprint, () -> s.autoSprint = !s.autoSprint));
                 r.add(toggle("Toggle Sprint", "Sprint travado", () -> s.toggleSprint, () -> s.toggleSprint = !s.toggleSprint));
                 r.add(toggle("Toggle Sneak", "Agachar travado", () -> s.toggleSneak, () -> s.toggleSneak = !s.toggleSneak));
@@ -95,8 +111,10 @@ public final class ZyonScreen extends Screen {
                 r.add(toggle("Auto Respawn", "Renasce sozinho", () -> s.autoRespawn, () -> s.autoRespawn = !s.autoRespawn));
                 r.add(toggle("Fullbright", "Ve no escuro", () -> s.fullbright, () -> s.fullbright = !s.fullbright));
                 r.add(toggle("Zoom", "Segure a tecla C", () -> s.zoom, () -> s.zoom = !s.zoom));
+                r.add(toggle("Auto Bridge", "Bloco embaixo na ponte", () -> s.autoBridge, () -> s.autoBridge = !s.autoBridge));
+                r.add(slider("Velocidade ponte", 1, 10, 1, () -> s.bridgeSpeed, v -> s.bridgeSpeed = v, v -> v + "/10"));
             }
-            case 2 -> {
+            case 3 -> {
                 r.add(toggle("ESP Jogadores", "Caixa nos jogadores", () -> s.playerEsp, () -> s.playerEsp = !s.playerEsp));
                 r.add(toggle("ESP Entidades", "Mobs e animais", () -> s.entityEsp, () -> s.entityEsp = !s.entityEsp));
                 r.add(toggle("ESP Itens", "Itens no chao", () -> s.itemEsp, () -> s.itemEsp = !s.itemEsp));
@@ -105,13 +123,12 @@ public final class ZyonScreen extends Screen {
                 r.add(toggle("Tracers", "Linhas ate os alvos", () -> s.tracers, () -> s.tracers = !s.tracers));
                 r.add(toggle("Name Tags", "Nome, vida e distancia", () -> s.nameTags, () -> s.nameTags = !s.nameTags));
                 r.add(toggle("Hitbox", "Caixa 3D do alvo", () -> s.hitboxViz, () -> s.hitboxViz = !s.hitboxViz));
-                r.add(cycle("Alcance ESP", "Distancia maxima", () -> s.espRange + " bl",
-                        () -> s.espRange = next(s.espRange, new int[]{32, 64, 96, 128})));
+                r.add(slider("Alcance ESP", 32, 128, 16, () -> s.espRange, v -> s.espRange = v, v -> v + " bl"));
                 r.add(toggle("HUD modulos", "Lista de ativos", () -> s.hudModules, () -> s.hudModules = !s.hudModules));
                 r.add(toggle("HUD achados", "Resultados do scanner", () -> s.hudFindings, () -> s.hudFindings = !s.hudFindings));
                 r.add(toggle("Mira custom", "Mira colorida", () -> s.customCrosshair, () -> s.customCrosshair = !s.customCrosshair));
             }
-            case 3 -> {
+            case 4 -> {
                 r.add(toggle("FPS", "Quadros por segundo", () -> s.hudFps, () -> s.hudFps = !s.hudFps));
                 r.add(toggle("Ping", "Latencia do servidor", () -> s.hudPing, () -> s.hudPing = !s.hudPing));
                 r.add(toggle("Coordenadas", "Posicao XYZ", () -> s.hudCoords, () -> s.hudCoords = !s.hudCoords));
@@ -122,11 +139,11 @@ public final class ZyonScreen extends Screen {
                 r.add(toggle("Velocimetro", "Blocos por segundo", () -> s.hudSpeed, () -> s.hudSpeed = !s.hudSpeed));
                 r.add(toggle("CPS", "Seus cliques", () -> s.hudCps, () -> s.hudCps = !s.hudCps));
                 r.add(toggle("Keystrokes", "Teclas WASD", () -> s.hudKeystrokes, () -> s.hudKeystrokes = !s.hudKeystrokes));
-                r.add(toggle("Armadura", "Peças e durabilidade", () -> s.hudArmor, () -> s.hudArmor = !s.hudArmor));
+                r.add(toggle("Armadura", "Pecas e durabilidade", () -> s.hudArmor, () -> s.hudArmor = !s.hudArmor));
                 r.add(toggle("Efeitos", "Efeitos de pocao", () -> s.hudEffects, () -> s.hudEffects = !s.hudEffects));
                 r.add(toggle("Inventario", "Itens do inventario", () -> s.hudInventory, () -> s.hudInventory = !s.hudInventory));
             }
-            case 4 -> {
+            case 5 -> {
                 r.add(toggle("Crystals", "Conta seus crystals", () -> s.cntCrystals, () -> s.cntCrystals = !s.cntCrystals));
                 r.add(toggle("Totems", "Conta seus totems", () -> s.cntTotems, () -> s.cntTotems = !s.cntTotems));
                 r.add(toggle("Obsidian", "Conta obsidian", () -> s.cntObsidian, () -> s.cntObsidian = !s.cntObsidian));
@@ -148,8 +165,7 @@ public final class ZyonScreen extends Screen {
                 r.add(toggle("Amethyst", "Procura ametista", () -> s.amethystScanner, () -> s.amethystScanner = !s.amethystScanner));
                 r.add(cycle("Modo Finder", "Tipo de busca", () -> s.finderMode.name(), s::cycleFinderMode));
                 r.add(cycle("Modo Amethyst", "Tipo de busca", () -> s.amethystMode.name(), s::cycleAmethystMode));
-                r.add(cycle("Alcance", "Chunks escaneados", () -> s.rangeChunks + " ch",
-                        () -> s.rangeChunks = next(s.rangeChunks, new int[]{2, 3, 4, 6, 8})));
+                r.add(slider("Alcance scanner", 2, 8, 1, () -> s.rangeChunks, v -> s.rangeChunks = v, v -> v + " ch"));
             }
         }
         return r;
@@ -160,6 +176,17 @@ public final class ZyonScreen extends Screen {
     private int cardX(int i, int cw) { return left + SIDE + 8 + (i / PER_COL) * (cw + 6); }
     private int cardY(int i) { return top + HEADER + 8 + (i % PER_COL) * ROW_H; }
     private int cardW() { return (W - SIDE - 16 - 6) / 2; }
+
+    /** Toque na barra: le a posicao do dedo e acha o valor. */
+    private void sliderTap(Row row, int cx, int cw) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        double mx = mc.mouse.getX() * mc.getWindow().getScaledWidth() / (double) mc.getWindow().getWidth();
+        double frac = (mx - (cx + 8)) / (double) (cw - 16);
+        frac = Math.max(0.0, Math.min(1.0, frac));
+        int steps = Math.max(1, (row.max - row.min) / row.step);
+        int idx = (int) Math.round(frac * steps);
+        row.seti.accept(row.min + idx * row.step);
+    }
 
     @Override
     protected void init() {
@@ -175,8 +202,12 @@ public final class ZyonScreen extends Screen {
         int cw = cardW();
         for (int i = 0; i < rows.size(); i++) {
             final Row row = rows.get(i);
-            addDrawableChild(ButtonWidget.builder(Text.empty(), b -> row.click.run())
-                    .dimensions(cardX(i, cw), cardY(i), cw, ROW_H - 3).build());
+            final int cx = cardX(i, cw);
+            addDrawableChild(ButtonWidget.builder(Text.empty(), b -> {
+                        if (row.geti != null) sliderTap(row, cx, cw);
+                        else row.click.run();
+                    })
+                    .dimensions(cx, cardY(i), cw, ROW_H - 3).build());
         }
     }
 
@@ -192,16 +223,13 @@ public final class ZyonScreen extends Screen {
         super.render(ctx, mouseX, mouseY, delta);
 
         int x0 = left, y0 = top;
-        // sombra + painel
         ctx.fill(x0 + 3, y0 + 3, x0 + W + 3, y0 + H + 3, 0x66000000);
         ctx.fill(x0, y0, x0 + W, y0 + H, BG);
-        // cabecalho com degrade
         for (int i = 0; i < HEADER; i++) {
-            int a = 0xFF;
             int rr = 0x1A + (0x0E - 0x1A) * i / HEADER;
             int gg = 0x14 + (0x10 - 0x14) * i / HEADER;
             int bb = 0x3A + (0x1A - 0x3A) * i / HEADER;
-            ctx.fill(x0, y0 + i, x0 + W, y0 + i + 1, (a << 24) | (rr << 16) | (gg << 8) | bb);
+            ctx.fill(x0, y0 + i, x0 + W, y0 + i + 1, (0xFF << 24) | (rr << 16) | (gg << 8) | bb);
         }
         ctx.fill(x0, y0 + HEADER, x0 + W, y0 + HEADER + 1, ACCENT);
         ctx.fill(x0 + 12, y0 + 11, x0 + 20, y0 + 19, ACCENT);
@@ -212,7 +240,6 @@ public final class ZyonScreen extends Screen {
         ctx.drawText(textRenderer, ver, x0 + W - 14 - textRenderer.getWidth(ver), y0 + 12, DIM, false);
         border(ctx, x0, y0, x0 + W, y0 + H, 0xFF232A44);
 
-        // abas
         ctx.fill(x0 + 1, y0 + HEADER + 1, x0 + SIDE, y0 + H - 1, SIDEBG);
         for (int i = 0; i < TABS.length; i++) {
             int tx = x0 + 6, ty = y0 + HEADER + 8 + i * TAB_STEP, tw = SIDE - 12;
@@ -220,22 +247,38 @@ public final class ZyonScreen extends Screen {
             boolean hov = mouseX >= tx && mouseX < tx + tw && mouseY >= ty && mouseY < ty + TAB_H;
             ctx.fill(tx, ty, tx + tw, ty + TAB_H, sel ? 0xFF241C4A : (hov ? 0xFF1A2036 : SIDEBG));
             if (sel) ctx.fill(tx, ty, tx + 2, ty + TAB_H, ACCENT);
-            ctx.fill(tx + 8, ty + 6, tx + 20, ty + 18, ICON_COLORS[i]);
-            ctx.drawText(textRenderer, ICONS[i], tx + 12, ty + 8, 0xFF0B0E17, false);
-            ctx.drawText(textRenderer, TABS[i], tx + 26, ty + 8, sel ? TEXT : DIM, false);
+            ctx.fill(tx + 8, ty + 5, tx + 20, ty + 17, ICON_COLORS[i]);
+            ctx.drawText(textRenderer, ICONS[i], tx + 12, ty + 7, 0xFF0B0E17, false);
+            ctx.drawText(textRenderer, TABS[i], tx + 26, ty + 7, sel ? TEXT : DIM, false);
         }
 
-        // cartoes
         List<Row> rows = rows();
         int cw = cardW();
         for (int i = 0; i < rows.size(); i++) {
             Row row = rows.get(i);
             int cx = cardX(i, cw), cy = cardY(i), ch = ROW_H - 3;
             boolean hov = mouseX >= cx && mouseX < cx + cw && mouseY >= cy && mouseY < cy + ch;
-            boolean on = row.on != null && row.on.getAsBoolean();
             ctx.fill(cx, cy, cx + cw, cy + ch, hov ? CARD_HOVER : CARD);
-            ctx.fill(cx, cy, cx + 2, cy + ch, row.on == null ? ACCENT : (on ? GREEN : OFF));
 
+            if (row.geti != null) {
+                // barra de ajuste
+                int v = row.geti.getAsInt();
+                ctx.fill(cx, cy, cx + 2, cy + ch, ACCENT);
+                String vs = row.fmt.apply(v);
+                int vw = textRenderer.getWidth(vs);
+                ctx.drawText(textRenderer, textRenderer.trimToWidth(row.name, cw - vw - 22), cx + 8, cy + 3, TEXT, false);
+                ctx.drawText(textRenderer, vs, cx + cw - 8 - vw, cy + 3, ACCENT_LIGHT, false);
+                int tx1 = cx + 8, tx2 = cx + cw - 8, ty = cy + 16;
+                ctx.fill(tx1, ty, tx2, ty + 4, 0xFF2A3045);
+                double frac = (v - row.min) / (double) Math.max(1, row.max - row.min);
+                int kx = tx1 + (int) Math.round(frac * (tx2 - tx1 - 4));
+                ctx.fill(tx1, ty, kx + 2, ty + 4, ACCENT);
+                ctx.fill(kx, ty - 2, kx + 4, ty + 6, 0xFFFFFFFF);
+                continue;
+            }
+
+            boolean on = row.on != null && row.on.getAsBoolean();
+            ctx.fill(cx, cy, cx + 2, cy + ch, row.on == null ? ACCENT : (on ? GREEN : OFF));
             int rightW;
             if (row.on != null) {
                 int px = cx + cw - 8 - 28, py = cy + (ch - 14) / 2;
@@ -253,12 +296,10 @@ public final class ZyonScreen extends Screen {
                 rightW = vw + 10;
             }
             int maxText = cw - 10 - rightW;
-            ctx.drawText(textRenderer, textRenderer.trimToWidth(row.name, maxText), cx + 8, cy + 4,
-                    TEXT, false);
-            ctx.drawText(textRenderer, textRenderer.trimToWidth(row.desc, maxText), cx + 8, cy + 14,
-                    DIM, false);
+            ctx.drawText(textRenderer, textRenderer.trimToWidth(row.name, maxText), cx + 8, cy + 4, TEXT, false);
+            ctx.drawText(textRenderer, textRenderer.trimToWidth(row.desc, maxText), cx + 8, cy + 14, DIM, false);
         }
-        ctx.drawText(textRenderer, "ESC - fechar    toque nos cartoes para ligar", x0 + SIDE + 8, y0 + H - 12, DIM, false);
+        ctx.drawText(textRenderer, "ESC - fechar    toque nas barras para ajustar", x0 + SIDE + 8, y0 + H - 12, DIM, false);
     }
 
     @Override

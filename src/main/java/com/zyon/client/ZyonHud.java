@@ -217,6 +217,9 @@ public final class ZyonHud {
         if (s.killAura) l.add("KillAura");
         if (s.autoCrystal) l.add("AutoCrystal");
         if (s.autoObsidian) l.add("AutoObsidian");
+        if (s.autoTotem) l.add("AutoTotem");
+        if (s.autoBridge) l.add("AutoBridge");
+        if (s.cpvpAll) l.add("CPvP");
         if (s.triggerBot) l.add("TriggerBot");
         if (s.autoClicker) l.add("AutoClicker");
         if (s.aimAssist) l.add("AimAssist");

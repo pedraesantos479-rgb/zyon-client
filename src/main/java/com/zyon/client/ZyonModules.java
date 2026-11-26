@@ -1,7 +1,10 @@
 package com.zyon.client;
 
+import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
+import net.minecraft.block.FallingBlock;
+import net.minecraft.block.TntBlock;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.network.ClientPlayerEntity;
@@ -13,6 +16,7 @@ import net.minecraft.entity.decoration.EndCrystalEntity;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.item.BlockItem;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
@@ -26,6 +30,7 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.Difficulty;
 
 import java.util.ArrayDeque;
 import java.util.Comparator;
@@ -36,6 +41,8 @@ public final class ZyonModules {
     private static boolean addedNightVision;
     private static int crystalTimer;
     private static int obsidianTimer;
+    private static int totemTimer;
+    private static int bridgeTimer;
     private static int clickTimer;
     private static int refillTimer;
     private static final Item[] lastHotbar = new Item[9];
@@ -92,6 +99,8 @@ public final class ZyonModules {
             if (eating) stopEat(mc, p);
             return;
         }
+        autoTotem(mc, p, s);
+        autoBridge(mc, p, w, s);
         killAura(mc, p, w, s);
         triggerBot(mc, p, s);
         autoClicker(mc, p, s);
@@ -324,30 +333,44 @@ public final class ZyonModules {
     }
 
     private static void autoCrystal(MinecraftClient mc, ClientPlayerEntity p, ClientWorld w, DiscoverySettings s) {
-        if (!s.autoCrystal) return;
+        if (!(s.autoCrystal || s.cpvpAll)) return;
         if (crystalTimer-- > 0) return;
-        crystalTimer = Math.max(0, s.crystalDelay);
+        crystalTimer = delayTicks(s.cpvpSpeed);
         double range = s.crystalRange;
 
         PlayerEntity target = nearestEnemy(p, w, 10);
         if (target == null) return;
+        double selfHp = p.getHealth() + p.getAbsorptionAmount();
 
+        // 1) quebra o melhor crystal (que nao machuca demais voce)
         List<EndCrystalEntity> crystals = w.getEntitiesByClass(EndCrystalEntity.class,
-                target.getBoundingBox().expand(6),
-                c -> c.isAlive() && p.distanceTo(c) <= range && c.distanceTo(target) <= 6);
-        if (!crystals.isEmpty()) {
-            EndCrystalEntity c = crystals.stream().min(Comparator.comparingDouble(e -> e.distanceTo(target))).get();
-            mc.interactionManager.attackEntity(p, c);
+                target.getBoundingBox().expand(8),
+                c -> c.isAlive() && p.distanceTo(c) <= range);
+        EndCrystalEntity bestC = null;
+        double bestScore = -1e9;
+        for (EndCrystalEntity c : crystals) {
+            double self = explosionDamage(w, p, c.getX(), c.getY(), c.getZ());
+            if (self > s.maxSelfDamage || self >= selfHp - 1.0) continue;
+            double tdmg = explosionDamage(w, target, c.getX(), c.getY(), c.getZ());
+            double score = tdmg - self * 0.5;
+            if (score > bestScore) {
+                bestScore = score;
+                bestC = c;
+            }
+        }
+        if (bestC != null) {
+            mc.interactionManager.attackEntity(p, bestC);
             p.swingHand(Hand.MAIN_HAND);
             markAttack();
             return;
         }
 
+        // 2) coloca crystal na base com melhor dano
         int slot = findHotbar(p, Items.END_CRYSTAL);
         if (slot < 0) return;
         BlockPos tp = target.getBlockPos();
         BlockPos best = null;
-        double bestD = 1e9;
+        double bestPlace = -1e9;
         for (int dx = -3; dx <= 3; dx++) {
             for (int dy = -2; dy <= 1; dy++) {
                 for (int dz = -3; dz <= 3; dz++) {
@@ -358,11 +381,13 @@ public final class ZyonModules {
                     double cz = pos.getZ() + 0.5;
                     double dEye = Math.sqrt(sq(cx - p.getX()) + sq(cy - p.getEyeY()) + sq(cz - p.getZ()));
                     if (dEye > range) continue;
-                    double dSelf = Math.sqrt(sq(cx - p.getX()) + sq(cz - p.getZ()));
-                    if (dSelf < 2.5 && Math.abs(cy - p.getY()) < 2.5) continue;
-                    double dT = sq(cx - target.getX()) + sq(cy - target.getY()) + sq(cz - target.getZ());
-                    if (dT < bestD) {
-                        bestD = dT;
+                    double self = explosionDamage(w, p, cx, cy, cz);
+                    if (self > s.maxSelfDamage || self >= selfHp - 1.0) continue;
+                    double tdmg = explosionDamage(w, target, cx, cy, cz);
+                    if (tdmg < s.minTargetDamage) continue;
+                    double score = tdmg - self * 0.5;
+                    if (score > bestPlace) {
+                        bestPlace = score;
                         best = pos;
                     }
                 }
@@ -375,10 +400,43 @@ public final class ZyonModules {
         p.swingHand(Hand.MAIN_HAND);
     }
 
+    /** Dano estimado de um crystal (formula do jogo, sem checar paredes). */
+    private static double explosionDamage(ClientWorld w, LivingEntity e, double x, double y, double z) {
+        double q = 12.0;
+        double dist = Math.sqrt(sq(e.getX() - x) + sq(e.getY() - y) + sq(e.getZ() - z));
+        if (dist >= q) return 0.0;
+        double impact = 1.0 - dist / q;
+        double dmg = (impact * impact + impact) / 2.0 * 7.0 * q + 1.0;
+        Difficulty d = w.getDifficulty();
+        if (d == Difficulty.PEACEFUL) return 0.0;
+        if (d == Difficulty.EASY) dmg = Math.min(dmg / 2.0 + 1.0, dmg);
+        else if (d == Difficulty.HARD) dmg = dmg * 1.5;
+        double armor = e.getArmor();
+        double red = Math.min(20.0, Math.max(armor / 5.0, armor - dmg / 2.0));
+        return dmg * (1.0 - red / 25.0);
+    }
+
+    private static void autoTotem(MinecraftClient mc, ClientPlayerEntity p, DiscoverySettings s) {
+        if (!s.autoTotem) return;
+        if (p.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING)) return;
+        if (s.totemHealth > 0 && p.getHealth() + p.getAbsorptionAmount() > s.totemHealth) return;
+        if (totemTimer-- > 0) return;
+        totemTimer = 2;
+        int slotId = -1;
+        for (int i = 9; i < 36 && slotId < 0; i++) {
+            if (p.getInventory().getStack(i).isOf(Items.TOTEM_OF_UNDYING)) slotId = i;
+        }
+        for (int i = 0; i < 9 && slotId < 0; i++) {
+            if (p.getInventory().getStack(i).isOf(Items.TOTEM_OF_UNDYING)) slotId = 36 + i;
+        }
+        if (slotId < 0) return;
+        mc.interactionManager.clickSlot(p.playerScreenHandler.syncId, slotId, 40, SlotActionType.SWAP, p);
+    }
+
     private static void autoObsidian(MinecraftClient mc, ClientPlayerEntity p, ClientWorld w, DiscoverySettings s) {
-        if (!s.autoObsidian) return;
+        if (!(s.autoObsidian || s.cpvpAll)) return;
         if (obsidianTimer-- > 0) return;
-        obsidianTimer = 3;
+        obsidianTimer = 1 + delayTicks(s.cpvpSpeed);
 
         PlayerEntity target = nearestEnemy(p, w, 10);
         if (target == null) return;
@@ -429,6 +487,67 @@ public final class ZyonModules {
                 bestFace.getOffsetX() * 0.5, bestFace.getOffsetY() * 0.5, bestFace.getOffsetZ() * 0.5);
         mc.interactionManager.interactBlock(p, Hand.MAIN_HAND, new BlockHitResult(hitVec, bestFace, bestSupport, false));
         p.swingHand(Hand.MAIN_HAND);
+    }
+
+    // ---------- Auto Bridge ----------
+
+    /** Velocidade 1..10 vira espera em ticks (10 = mais rapido). */
+    private static int delayTicks(int speed) {
+        return Math.max(0, (10 - Math.max(1, Math.min(10, speed))) / 2);
+    }
+
+    private static void autoBridge(MinecraftClient mc, ClientPlayerEntity p, ClientWorld w, DiscoverySettings s) {
+        if (!s.autoBridge) return;
+        if (bridgeTimer-- > 0) return;
+        if (!p.isOnGround()) return;
+        int slot = findBuildBlock(p);
+        if (slot < 0) return;
+        Vec3d vel = p.getVelocity();
+        BlockPos[] cands = {
+                BlockPos.ofFloored(p.getX(), p.getY() - 1.0, p.getZ()),
+                BlockPos.ofFloored(p.getX() + vel.x * 3.0, p.getY() - 1.0, p.getZ() + vel.z * 3.0)
+        };
+        for (BlockPos pos : cands) {
+            if (!w.getBlockState(pos).isAir()) continue;
+            if (!w.getOtherEntities((Entity) null, new Box(pos)).isEmpty()) continue;
+            if (placeBlock(mc, p, w, pos, slot)) {
+                bridgeTimer = delayTicks(s.bridgeSpeed);
+                return;
+            }
+        }
+    }
+
+    private static boolean placeBlock(MinecraftClient mc, ClientPlayerEntity p, ClientWorld w, BlockPos pos, int slot) {
+        Direction[] dirs = {Direction.DOWN, Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST};
+        for (Direction dir : dirs) {
+            BlockPos n = pos.offset(dir);
+            if (!w.getBlockState(n).isSolidBlock(w, n)) continue;
+            Direction face = dir.getOpposite();
+            Vec3d hitVec = Vec3d.ofCenter(n).add(face.getOffsetX() * 0.5, face.getOffsetY() * 0.5, face.getOffsetZ() * 0.5);
+            int prev = p.getInventory().getSelectedSlot();
+            selectSlot(p, slot);
+            mc.interactionManager.interactBlock(p, Hand.MAIN_HAND, new BlockHitResult(hitVec, face, n, false));
+            p.swingHand(Hand.MAIN_HAND);
+            selectSlot(p, prev);
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean usableBlock(ItemStack st) {
+        if (st.isEmpty() || !(st.getItem() instanceof BlockItem bi)) return false;
+        Block b = bi.getBlock();
+        if (b == Blocks.OBSIDIAN || b == Blocks.BEDROCK || b == Blocks.COBWEB) return false;
+        return !(b instanceof FallingBlock) && !(b instanceof TntBlock) && !b.getDefaultState().hasBlockEntity();
+    }
+
+    private static int findBuildBlock(ClientPlayerEntity p) {
+        int cur = p.getInventory().getSelectedSlot();
+        if (usableBlock(p.getInventory().getStack(cur))) return cur;
+        for (int i = 0; i < 9; i++) {
+            if (usableBlock(p.getInventory().getStack(i))) return i;
+        }
+        return -1;
     }
 
     // ---------- Utilidades ----------
