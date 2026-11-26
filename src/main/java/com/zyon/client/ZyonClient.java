@@ -13,12 +13,17 @@ import org.lwjgl.glfw.GLFW;
 public final class ZyonClient implements ClientModInitializer {
     public static final DiscoverySettings SETTINGS = new DiscoverySettings();
     public static final DiscoveryScanner SCANNER = new DiscoveryScanner();
+    public static KeyBinding zoomKey;
     private static KeyBinding openMenu;
 
     @Override
     public void onInitializeClient() {
         openMenu = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.zyon.open_gui", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT_SHIFT,
+                KeyBinding.Category.MISC
+        ));
+        zoomKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.zyon.zoom", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_C,
                 KeyBinding.Category.MISC
         ));
         ClientTickEvents.END_CLIENT_TICK.register(client -> {

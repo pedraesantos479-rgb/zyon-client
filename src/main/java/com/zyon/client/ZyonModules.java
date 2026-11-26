@@ -3,10 +3,11 @@ package com.zyon.client;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.client.sound.PositionedSoundInstance;
 import net.minecraft.client.world.ClientWorld;
+import net.minecraft.component.DataComponentTypes;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.decoration.EndCrystalEntity;
@@ -14,25 +15,59 @@ import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import net.minecraft.screen.slot.SlotActionType;
+import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
-import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.Comparator;
 import java.util.List;
 
 public final class ZyonModules {
+    // estado
     private static boolean addedNightVision;
     private static boolean espWasOn;
     private static int crystalTimer;
     private static int obsidianTimer;
+    private static int clickTimer;
+    private static int refillTimer;
+    private static final Item[] lastHotbar = new Item[9];
+    private static boolean eating;
+    private static int eatSlot;
+    private static int eatPrevSlot;
+    private static boolean sneakApplied;
+    private static boolean sprintApplied;
+    private static boolean zooming;
+    private static int savedFov = 70;
+
+    // estatisticas (lidas pelo HUD)
+    public static double speedH;
+    public static double speedV;
+    public static boolean critReady;
+    public static int combo;
+    public static double lastReach;
+    private static double lastX, lastZ;
+    private static boolean attackWasDown;
+    private static final ArrayDeque<Long> clicks = new ArrayDeque<>();
+    private static long lastAttackMs;
+    private static int lastTargetHurt;
+    private static int lastSelfHurt;
 
     private ZyonModules() {}
+
+    public static void renderHud(DrawContext ctx) {
+        ZyonHud.render(ctx);
+    }
+
+    public static int cps() { return clicks.size(); }
 
     public static void tick(MinecraftClient mc) {
         ClientPlayerEntity p = mc.player;
@@ -40,14 +75,67 @@ public final class ZyonModules {
         if (p == null || w == null) return;
         DiscoverySettings s = ZyonClient.SETTINGS;
 
+        if (s.autoRespawn && p.isDead()) {
+            p.requestRespawn();
+            return;
+        }
+
+        trackStats(mc, p, w, s);
         sprint(mc, p, s);
+        toggles(mc, s);
         fullbright(p, s);
         esp(w, p, s);
+        zoom(mc, s);
+        autoRefill(mc, p, s);
 
-        if (mc.currentScreen != null || mc.interactionManager == null) return;
+        if (mc.currentScreen != null || mc.interactionManager == null) {
+            if (eating) stopEat(mc, p);
+            return;
+        }
         killAura(mc, p, w, s);
+        triggerBot(mc, p, s);
+        autoClicker(mc, p, s);
+        aimAssist(mc, p, w, s);
         autoObsidian(mc, p, w, s);
         autoCrystal(mc, p, w, s);
+        autoEat(mc, p, s);
+    }
+
+    // ---------- Estatisticas ----------
+
+    private static void markAttack() { lastAttackMs = System.currentTimeMillis(); }
+
+    private static void trackStats(MinecraftClient mc, ClientPlayerEntity p, ClientWorld w, DiscoverySettings s) {
+        speedH = Math.sqrt(sq(p.getX() - lastX) + sq(p.getZ() - lastZ)) * 20.0;
+        speedV = p.getVelocity().y * 20.0;
+        lastX = p.getX();
+        lastZ = p.getZ();
+
+        boolean down = mc.options.attackKey.isPressed();
+        long now = System.currentTimeMillis();
+        if (down && !attackWasDown) {
+            clicks.addLast(now);
+            lastAttackMs = now;
+        }
+        attackWasDown = down;
+        while (!clicks.isEmpty() && now - clicks.peekFirst() > 1000) clicks.pollFirst();
+
+        critReady = p.fallDistance > 0.0 && !p.isOnGround() && !p.isClimbing()
+                && !p.isTouchingWater() && !p.hasVehicle();
+
+        PlayerEntity t = nearestEnemy(p, w, 8);
+        int th = t == null ? 0 : t.hurtTime;
+        if (t != null && th > 0 && th > lastTargetHurt && now - lastAttackMs < 450) {
+            combo++;
+            lastReach = p.distanceTo(t);
+            if (s.hitSounds) {
+                mc.getSoundManager().play(PositionedSoundInstance.master(SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, 1.6f));
+            }
+        }
+        lastTargetHurt = th;
+        int sh = p.hurtTime;
+        if (sh > lastSelfHurt) combo = 0;
+        lastSelfHurt = sh;
     }
 
     // ---------- Jogador ----------
@@ -56,6 +144,17 @@ public final class ZyonModules {
         if (s.autoSprint && mc.options.forwardKey.isPressed() && !p.isSneaking()
                 && !p.horizontalCollision && p.getHungerManager().getFoodLevel() > 6) {
             p.setSprinting(true);
+        }
+    }
+
+    private static void toggles(MinecraftClient mc, DiscoverySettings s) {
+        if (s.toggleSneak != sneakApplied) {
+            mc.options.getSneakToggled().setValue(s.toggleSneak);
+            sneakApplied = s.toggleSneak;
+        }
+        if (s.toggleSprint != sprintApplied) {
+            mc.options.getSprintToggled().setValue(s.toggleSprint);
+            sprintApplied = s.toggleSprint;
         }
     }
 
@@ -71,8 +170,6 @@ public final class ZyonModules {
         }
     }
 
-    // ---------- Visual ----------
-
     private static void esp(ClientWorld w, ClientPlayerEntity p, DiscoverySettings s) {
         if (s.playerEsp) {
             for (PlayerEntity e : w.getPlayers()) {
@@ -87,54 +184,105 @@ public final class ZyonModules {
         }
     }
 
-    public static void renderHud(DrawContext ctx) {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc.player == null) return;
-        DiscoverySettings s = ZyonClient.SETTINGS;
-        TextRenderer tr = mc.textRenderer;
-
-        if (s.hudModules) {
-            int y = 4;
-            ctx.drawText(tr, "Zyon", 4, y, 0xFF9B7BFF, true);
-            y += 11;
-            for (String n : activeModules(s)) {
-                ctx.drawText(tr, n, 4, y, 0xFFE6E9F2, true);
-                y += 10;
-            }
+    private static void zoom(MinecraftClient mc, DiscoverySettings s) {
+        boolean want = s.zoom && ZyonClient.zoomKey != null && ZyonClient.zoomKey.isPressed()
+                && mc.currentScreen == null;
+        if (want && !zooming) {
+            savedFov = mc.options.getFov().getValue();
+            mc.options.getFov().setValue(30);
+            zooming = true;
+        } else if (!want && zooming) {
+            mc.options.getFov().setValue(savedFov);
+            zooming = false;
         }
+    }
 
-        if (s.hudFindings && s.anyScannerEnabled()) {
-            int sw = mc.getWindow().getScaledWidth();
-            List<DiscoveryScanner.Finding> list = new ArrayList<>(ZyonClient.SCANNER.findings().values());
-            list.sort((a, b) -> Integer.compare(b.count(), a.count()));
-            String title = "Achados";
-            ctx.drawText(tr, title, sw - 4 - tr.getWidth(title), 4, 0xFF9B7BFF, true);
-            int y = 15;
-            int shown = 0;
-            for (DiscoveryScanner.Finding f : list) {
-                if (shown++ >= 6) break;
-                String line = f.label() + " x" + f.count() + "  (" + f.pos().getX() + ", " + f.pos().getZ() + ")";
-                ctx.drawText(tr, line, sw - 4 - tr.getWidth(line), y, 0xFFE6E9F2, true);
-                y += 10;
+    private static boolean goodFood(ItemStack st) {
+        if (!st.contains(DataComponentTypes.FOOD)) return false;
+        return !(st.isOf(Items.GOLDEN_APPLE) || st.isOf(Items.ENCHANTED_GOLDEN_APPLE)
+                || st.isOf(Items.CHORUS_FRUIT) || st.isOf(Items.ROTTEN_FLESH)
+                || st.isOf(Items.SPIDER_EYE) || st.isOf(Items.POISONOUS_POTATO)
+                || st.isOf(Items.PUFFERFISH));
+    }
+
+    private static void autoEat(MinecraftClient mc, ClientPlayerEntity p, DiscoverySettings s) {
+        if (!s.autoEat) {
+            if (eating) stopEat(mc, p);
+            return;
+        }
+        int food = p.getHungerManager().getFoodLevel();
+        if (eating) {
+            if (food >= 20 || !goodFood(p.getInventory().getStack(eatSlot))) {
+                stopEat(mc, p);
+            } else {
+                selectSlot(p, eatSlot);
+                mc.options.useKey.setPressed(true);
+            }
+            return;
+        }
+        if (food <= 14 && !p.isUsingItem()) {
+            for (int i = 0; i < 9; i++) {
+                if (goodFood(p.getInventory().getStack(i))) {
+                    eatPrevSlot = p.getInventory().getSelectedSlot();
+                    eatSlot = i;
+                    selectSlot(p, i);
+                    eating = true;
+                    break;
+                }
             }
         }
     }
 
-    private static List<String> activeModules(DiscoverySettings s) {
-        List<String> l = new ArrayList<>();
-        if (s.killAura) l.add("KillAura");
-        if (s.autoCrystal) l.add("AutoCrystal");
-        if (s.autoObsidian) l.add("AutoObsidian");
-        if (s.autoSprint) l.add("AutoSprint");
-        if (s.fullbright) l.add("Fullbright");
-        if (s.playerEsp) l.add("ESP");
-        if (s.baseFinder) l.add("BaseFinder");
-        if (s.chunkFinder) l.add("ChunkFinder");
-        if (s.amethystScanner) l.add("Amethyst");
-        return l;
+    private static void stopEat(MinecraftClient mc, ClientPlayerEntity p) {
+        mc.options.useKey.setPressed(false);
+        selectSlot(p, eatPrevSlot);
+        eating = false;
+    }
+
+    private static void autoRefill(MinecraftClient mc, ClientPlayerEntity p, DiscoverySettings s) {
+        if (s.autoRefill && mc.currentScreen == null && mc.interactionManager != null && refillTimer-- <= 0) {
+            refillTimer = 8;
+            for (int h = 0; h < 9; h++) {
+                ItemStack cur = p.getInventory().getStack(h);
+                Item want = cur.isEmpty() ? lastHotbar[h]
+                        : (cur.isStackable() && cur.getCount() <= 8 ? cur.getItem() : null);
+                if (want == null) continue;
+                int best = -1;
+                int bestCount = cur.getCount();
+                for (int i = 9; i < 36; i++) {
+                    ItemStack o = p.getInventory().getStack(i);
+                    if (o.isOf(want) && o.getCount() > bestCount) {
+                        best = i;
+                        bestCount = o.getCount();
+                    }
+                }
+                if (best >= 0) {
+                    mc.interactionManager.clickSlot(p.playerScreenHandler.syncId, best, h, SlotActionType.SWAP, p);
+                    break;
+                }
+            }
+        }
+        for (int h = 0; h < 9; h++) {
+            ItemStack st = p.getInventory().getStack(h);
+            if (!st.isEmpty()) lastHotbar[h] = st.getItem();
+        }
     }
 
     // ---------- Combate ----------
+
+    private static void faceTarget(ClientPlayerEntity p, Entity t, float strength) {
+        Vec3d c = t.getBoundingBox().getCenter();
+        double dx = c.x - p.getX();
+        double dy = c.y - p.getEyeY();
+        double dz = c.z - p.getZ();
+        double hd = Math.sqrt(dx * dx + dz * dz);
+        float ty = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);
+        float tp = (float) -Math.toDegrees(Math.atan2(dy, hd));
+        float dyaw = MathHelper.wrapDegrees(ty - p.getYaw());
+        float dpit = tp - p.getPitch();
+        p.setYaw(p.getYaw() + dyaw * strength);
+        p.setPitch(MathHelper.clamp(p.getPitch() + dpit * strength, -90.0f, 90.0f));
+    }
 
     private static void killAura(MinecraftClient mc, ClientPlayerEntity p, ClientWorld w, DiscoverySettings s) {
         if (!s.killAura) return;
@@ -144,18 +292,49 @@ public final class ZyonModules {
                         && (!s.killAuraPlayersOnly || e instanceof PlayerEntity));
         if (list.isEmpty()) return;
         LivingEntity t = list.stream().min(Comparator.comparingDouble(e -> p.distanceTo(e))).get();
+        faceTarget(p, t, 1.0f);
+        if (p.getAttackCooldownProgress(0.5f) < 0.95f) return;
+        mc.interactionManager.attackEntity(p, t);
+        p.swingHand(Hand.MAIN_HAND);
+        markAttack();
+    }
 
+    private static void triggerBot(MinecraftClient mc, ClientPlayerEntity p, DiscoverySettings s) {
+        if (!s.triggerBot) return;
+        Entity e = mc.targetedEntity;
+        if (!(e instanceof LivingEntity le) || !le.isAlive() || le == p) return;
+        if (s.killAuraPlayersOnly && !(le instanceof PlayerEntity)) return;
+        if (p.getAttackCooldownProgress(0.5f) < 0.95f) return;
+        mc.interactionManager.attackEntity(p, le);
+        p.swingHand(Hand.MAIN_HAND);
+        markAttack();
+    }
+
+    private static void autoClicker(MinecraftClient mc, ClientPlayerEntity p, DiscoverySettings s) {
+        if (!s.autoClicker || !mc.options.attackKey.isPressed()) return;
+        if (clickTimer-- > 0) return;
+        clickTimer = Math.max(1, 20 / Math.max(1, s.autoClickerCps)) - 1;
+        Entity e = mc.targetedEntity;
+        if (e != null && e.isAlive() && e != p) {
+            mc.interactionManager.attackEntity(p, e);
+            p.swingHand(Hand.MAIN_HAND);
+            markAttack();
+        }
+    }
+
+    private static void aimAssist(MinecraftClient mc, ClientPlayerEntity p, ClientWorld w, DiscoverySettings s) {
+        if (!s.aimAssist || !mc.options.attackKey.isPressed()) return;
+        PlayerEntity t = nearestEnemy(p, w, 5);
+        if (t == null) return;
         Vec3d c = t.getBoundingBox().getCenter();
         double dx = c.x - p.getX();
         double dy = c.y - p.getEyeY();
         double dz = c.z - p.getZ();
         double hd = Math.sqrt(dx * dx + dz * dz);
-        p.setYaw((float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0));
-        p.setPitch((float) -Math.toDegrees(Math.atan2(dy, hd)));
-
-        if (p.getAttackCooldownProgress(0.5f) < 0.95f) return;
-        mc.interactionManager.attackEntity(p, t);
-        p.swingHand(Hand.MAIN_HAND);
+        float ty = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);
+        float tp = (float) -Math.toDegrees(Math.atan2(dy, hd));
+        if (Math.abs(MathHelper.wrapDegrees(ty - p.getYaw())) > 70.0f || Math.abs(tp - p.getPitch()) > 50.0f) return;
+        faceTarget(p, t, Math.max(0.02f, s.aimStrength / 200.0f));
     }
 
     private static void autoCrystal(MinecraftClient mc, ClientPlayerEntity p, ClientWorld w, DiscoverySettings s) {
@@ -167,7 +346,6 @@ public final class ZyonModules {
         PlayerEntity target = nearestEnemy(p, w, 10);
         if (target == null) return;
 
-        // 1) quebra cristal perto do alvo
         List<EndCrystalEntity> crystals = w.getEntitiesByClass(EndCrystalEntity.class,
                 target.getBoundingBox().expand(6),
                 c -> c.isAlive() && p.distanceTo(c) <= range && c.distanceTo(target) <= 6);
@@ -175,10 +353,10 @@ public final class ZyonModules {
             EndCrystalEntity c = crystals.stream().min(Comparator.comparingDouble(e -> e.distanceTo(target))).get();
             mc.interactionManager.attackEntity(p, c);
             p.swingHand(Hand.MAIN_HAND);
+            markAttack();
             return;
         }
 
-        // 2) coloca cristal na melhor base perto do alvo
         int slot = findHotbar(p, Items.END_CRYSTAL);
         if (slot < 0) return;
         BlockPos tp = target.getBlockPos();
@@ -222,7 +400,6 @@ public final class ZyonModules {
         if (slot < 0) return;
 
         BlockPos tp = target.getBlockPos();
-        // ja existe base de cristal perto do alvo? entao nao faz nada
         for (int dx = -2; dx <= 2; dx++) {
             for (int dz = -2; dz <= 2; dz++) {
                 for (int dy = -2; dy <= 0; dy++) {
@@ -270,16 +447,21 @@ public final class ZyonModules {
 
     // ---------- Utilidades ----------
 
-    private static boolean isCrystalBase(ClientWorld w, BlockPos pos) {
-        BlockState st = w.getBlockState(pos);
-        if (!(st.isOf(Blocks.OBSIDIAN) || st.isOf(Blocks.BEDROCK))) return false;
-        BlockPos a = pos.up();
-        if (!w.getBlockState(a).isAir() || !w.getBlockState(a.up()).isAir()) return false;
-        Box box = new Box(a.getX(), a.getY(), a.getZ(), a.getX() + 1, a.getY() + 2, a.getZ() + 1);
-        return w.getOtherEntities((Entity) null, box).isEmpty();
+    public static int count(ClientPlayerEntity p, Item item) {
+        int n = 0;
+        for (int i = 0; i < p.getInventory().size(); i++) {
+            ItemStack st = p.getInventory().getStack(i);
+            if (st.isOf(item)) n += st.getCount();
+        }
+        return n;
     }
 
-    private static PlayerEntity nearestEnemy(ClientPlayerEntity p, ClientWorld w, double r) {
+    public static int durabilityPercent(ItemStack st) {
+        if (st.isEmpty() || !st.isDamageable() || st.getMaxDamage() <= 0) return 100;
+        return 100 * (st.getMaxDamage() - st.getDamage()) / st.getMaxDamage();
+    }
+
+    public static PlayerEntity nearestEnemy(ClientPlayerEntity p, ClientWorld w, double r) {
         PlayerEntity best = null;
         double bd = 1e9;
         for (PlayerEntity e : w.getPlayers()) {
@@ -290,6 +472,15 @@ public final class ZyonModules {
             bd = d;
         }
         return best;
+    }
+
+    private static boolean isCrystalBase(ClientWorld w, BlockPos pos) {
+        BlockState st = w.getBlockState(pos);
+        if (!(st.isOf(Blocks.OBSIDIAN) || st.isOf(Blocks.BEDROCK))) return false;
+        BlockPos a = pos.up();
+        if (!w.getBlockState(a).isAir() || !w.getBlockState(a.up()).isAir()) return false;
+        Box box = new Box(a.getX(), a.getY(), a.getZ(), a.getX() + 1, a.getY() + 2, a.getZ() + 1);
+        return w.getOtherEntities((Entity) null, box).isEmpty();
     }
 
     private static int findHotbar(ClientPlayerEntity p, Item item) {

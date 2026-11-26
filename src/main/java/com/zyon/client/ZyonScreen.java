@@ -12,6 +12,7 @@ import java.util.function.Supplier;
 
 public final class ZyonScreen extends Screen {
     private static final int W = 360, H = 240, HEADER = 32, SIDE = 84, ROW_H = 26;
+    private static final int TAB_STEP = 21, TAB_H = 18;
     private static final int BG = 0xF00E111A;
     private static final int HEAD = 0xFF151A28;
     private static final int SIDEBG = 0xFF111522;
@@ -23,7 +24,8 @@ public final class ZyonScreen extends Screen {
     private static final int OFF = 0xFF3A4156;
     private static final int TEXT = 0xFFE6E9F2;
     private static final int DIM = 0xFF8A93A8;
-    private static final String[] TABS = {"Combate", "Jogador", "Visual", "Scanner"};
+    private static final String[] TABS = {
+            "Combate", "Combate 2", "Jogador", "HUD", "HUD 2", "CPvP", "Alvo", "Visual", "Scanner"};
 
     private static int tab = 0;
     private int left, top;
@@ -65,7 +67,7 @@ public final class ZyonScreen extends Screen {
                 r.add(toggle("KillAura", () -> s.killAura, () -> s.killAura = !s.killAura));
                 r.add(cycle("Alcance KillAura", () -> s.killAuraRange + " blocos",
                         () -> s.killAuraRange = next(s.killAuraRange, new int[]{3, 4, 5, 6})));
-                r.add(toggle("KillAura so jogadores", () -> s.killAuraPlayersOnly,
+                r.add(toggle("So jogadores", () -> s.killAuraPlayersOnly,
                         () -> s.killAuraPlayersOnly = !s.killAuraPlayersOnly));
                 r.add(toggle("Auto Crystal", () -> s.autoCrystal, () -> s.autoCrystal = !s.autoCrystal));
                 r.add(cycle("Alcance Crystal", () -> s.crystalRange + " blocos",
@@ -75,13 +77,65 @@ public final class ZyonScreen extends Screen {
                 r.add(toggle("Auto Obsidian", () -> s.autoObsidian, () -> s.autoObsidian = !s.autoObsidian));
             }
             case 1 -> {
-                r.add(toggle("Auto Sprint", () -> s.autoSprint, () -> s.autoSprint = !s.autoSprint));
-                r.add(toggle("Fullbright", () -> s.fullbright, () -> s.fullbright = !s.fullbright));
+                r.add(toggle("TriggerBot", () -> s.triggerBot, () -> s.triggerBot = !s.triggerBot));
+                r.add(toggle("AutoClicker", () -> s.autoClicker, () -> s.autoClicker = !s.autoClicker));
+                r.add(cycle("CPS do AutoClicker", () -> s.autoClickerCps + " cps",
+                        () -> s.autoClickerCps = next(s.autoClickerCps, new int[]{6, 8, 10, 12, 15})));
+                r.add(toggle("Aim Assist", () -> s.aimAssist, () -> s.aimAssist = !s.aimAssist));
+                r.add(cycle("Forca do Aim Assist", () -> s.aimStrength + "%",
+                        () -> s.aimStrength = next(s.aimStrength, new int[]{10, 20, 30, 50})));
+                r.add(toggle("Hit Sounds", () -> s.hitSounds, () -> s.hitSounds = !s.hitSounds));
             }
             case 2 -> {
+                r.add(toggle("Auto Sprint", () -> s.autoSprint, () -> s.autoSprint = !s.autoSprint));
+                r.add(toggle("Toggle Sprint", () -> s.toggleSprint, () -> s.toggleSprint = !s.toggleSprint));
+                r.add(toggle("Toggle Sneak", () -> s.toggleSneak, () -> s.toggleSneak = !s.toggleSneak));
+                r.add(toggle("Auto Eat", () -> s.autoEat, () -> s.autoEat = !s.autoEat));
+                r.add(toggle("Auto Refill", () -> s.autoRefill, () -> s.autoRefill = !s.autoRefill));
+                r.add(toggle("Auto Respawn", () -> s.autoRespawn, () -> s.autoRespawn = !s.autoRespawn));
+                r.add(toggle("Fullbright", () -> s.fullbright, () -> s.fullbright = !s.fullbright));
+            }
+            case 3 -> {
+                r.add(toggle("FPS", () -> s.hudFps, () -> s.hudFps = !s.hudFps));
+                r.add(toggle("Ping", () -> s.hudPing, () -> s.hudPing = !s.hudPing));
+                r.add(toggle("Coordenadas", () -> s.hudCoords, () -> s.hudCoords = !s.hudCoords));
+                r.add(toggle("Direcao", () -> s.hudDirection, () -> s.hudDirection = !s.hudDirection));
+                r.add(toggle("Relogio", () -> s.hudClock, () -> s.hudClock = !s.hudClock));
+                r.add(toggle("Memoria", () -> s.hudMemory, () -> s.hudMemory = !s.hudMemory));
+                r.add(toggle("Bioma", () -> s.hudBiome, () -> s.hudBiome = !s.hudBiome));
+            }
+            case 4 -> {
+                r.add(toggle("Velocimetro", () -> s.hudSpeed, () -> s.hudSpeed = !s.hudSpeed));
+                r.add(toggle("CPS", () -> s.hudCps, () -> s.hudCps = !s.hudCps));
+                r.add(toggle("Keystrokes", () -> s.hudKeystrokes, () -> s.hudKeystrokes = !s.hudKeystrokes));
+                r.add(toggle("Armadura", () -> s.hudArmor, () -> s.hudArmor = !s.hudArmor));
+                r.add(toggle("Efeitos", () -> s.hudEffects, () -> s.hudEffects = !s.hudEffects));
+                r.add(toggle("Inventario", () -> s.hudInventory, () -> s.hudInventory = !s.hudInventory));
+                r.add(toggle("Mira custom", () -> s.customCrosshair, () -> s.customCrosshair = !s.customCrosshair));
+            }
+            case 5 -> {
+                r.add(toggle("Crystals", () -> s.cntCrystals, () -> s.cntCrystals = !s.cntCrystals));
+                r.add(toggle("Totems", () -> s.cntTotems, () -> s.cntTotems = !s.cntTotems));
+                r.add(toggle("Obsidian", () -> s.cntObsidian, () -> s.cntObsidian = !s.cntObsidian));
+                r.add(toggle("Ender Pearls", () -> s.cntPearls, () -> s.cntPearls = !s.cntPearls));
+                r.add(toggle("Anchors", () -> s.cntAnchors, () -> s.cntAnchors = !s.cntAnchors));
+                r.add(toggle("Hole HUD", () -> s.holeHud, () -> s.holeHud = !s.holeHud));
+                r.add(toggle("Dano de explosao", () -> s.explosionDmg, () -> s.explosionDmg = !s.explosionDmg));
+            }
+            case 6 -> {
+                r.add(toggle("Target HUD", () -> s.targetHud, () -> s.targetHud = !s.targetHud));
+                r.add(toggle("Combo", () -> s.comboHud, () -> s.comboHud = !s.comboHud));
+                r.add(toggle("Reach", () -> s.reachHud, () -> s.reachHud = !s.reachHud));
+                r.add(toggle("Criticals", () -> s.critHud, () -> s.critHud = !s.critHud));
+                r.add(toggle("Aviso de totem", () -> s.totemWarning, () -> s.totemWarning = !s.totemWarning));
+                r.add(toggle("Aviso de durabilidade", () -> s.durabilityWarning,
+                        () -> s.durabilityWarning = !s.durabilityWarning));
+            }
+            case 7 -> {
                 r.add(toggle("HUD modulos ativos", () -> s.hudModules, () -> s.hudModules = !s.hudModules));
-                r.add(toggle("HUD achados do scanner", () -> s.hudFindings, () -> s.hudFindings = !s.hudFindings));
+                r.add(toggle("HUD achados", () -> s.hudFindings, () -> s.hudFindings = !s.hudFindings));
                 r.add(toggle("ESP de jogadores", () -> s.playerEsp, () -> s.playerEsp = !s.playerEsp));
+                r.add(toggle("Zoom (tecla C)", () -> s.zoom, () -> s.zoom = !s.zoom));
             }
             default -> {
                 r.add(toggle("Base Finder", () -> s.baseFinder, () -> s.baseFinder = !s.baseFinder));
@@ -106,7 +160,7 @@ public final class ZyonScreen extends Screen {
         for (int i = 0; i < TABS.length; i++) {
             final int idx = i;
             addDrawableChild(ButtonWidget.builder(Text.empty(), b -> { tab = idx; clearAndInit(); })
-                    .dimensions(left + 6, top + HEADER + 10 + i * 26, SIDE - 12, 22).build());
+                    .dimensions(left + 6, top + HEADER + 8 + i * TAB_STEP, SIDE - 12, TAB_H).build());
         }
         List<Row> rows = rows();
         for (int i = 0; i < rows.size(); i++) {
@@ -131,12 +185,12 @@ public final class ZyonScreen extends Screen {
 
         ctx.fill(x0, y0 + HEADER + 1, x0 + SIDE, y0 + H, SIDEBG);
         for (int i = 0; i < TABS.length; i++) {
-            int tx = x0 + 6, ty = y0 + HEADER + 10 + i * 26, tw = SIDE - 12;
+            int tx = x0 + 6, ty = y0 + HEADER + 8 + i * TAB_STEP, tw = SIDE - 12;
             boolean sel = i == tab;
-            boolean hov = mouseX >= tx && mouseX < tx + tw && mouseY >= ty && mouseY < ty + 22;
-            ctx.fill(tx, ty, tx + tw, ty + 22, sel ? 0xFF2A2350 : (hov ? 0xFF1E2333 : SIDEBG));
-            if (sel) ctx.fill(tx, ty, tx + 2, ty + 22, ACCENT);
-            ctx.drawText(textRenderer, TABS[i], tx + 10, ty + 7, sel ? TEXT : DIM, false);
+            boolean hov = mouseX >= tx && mouseX < tx + tw && mouseY >= ty && mouseY < ty + TAB_H;
+            ctx.fill(tx, ty, tx + tw, ty + TAB_H, sel ? 0xFF2A2350 : (hov ? 0xFF1E2333 : SIDEBG));
+            if (sel) ctx.fill(tx, ty, tx + 2, ty + TAB_H, ACCENT);
+            ctx.drawText(textRenderer, TABS[i], tx + 10, ty + 5, sel ? TEXT : DIM, false);
         }
 
         List<Row> rows = rows();
