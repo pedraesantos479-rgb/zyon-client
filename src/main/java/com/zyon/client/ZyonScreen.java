@@ -116,8 +116,11 @@ public final class ZyonScreen extends Screen {
                 r.add(toggle("Fullbright", "Ve no escuro", () -> s.fullbright, () -> s.fullbright = !s.fullbright));
                 r.add(toggle("Zoom", "Segure a tecla C", () -> s.zoom, () -> s.zoom = !s.zoom));
                 r.add(toggle("Auto Bridge", "Bloco embaixo na ponte", () -> s.autoBridge, () -> s.autoBridge = !s.autoBridge));
-                r.add(toggle("Nuker 3x3x3", "Quebra em volta do bloco mirado com picareta", () -> s.nuker3x3x3, () -> s.nuker3x3x3 = !s.nuker3x3x3));
                 r.add(slider("Velocidade ponte", 1, 10, 1, () -> s.bridgeSpeed, v -> s.bridgeSpeed = v, v -> v + "/10"));
+                r.add(toggle("Nuker", "Quebra blocos perto", () -> s.nuker, () -> s.nuker = !s.nuker));
+                r.add(slider("Alcance Nuker", 1, 5, 1, () -> s.nukerRange, v -> s.nukerRange = v, v -> v + " bl"));
+                r.add(toggle("Nuker so minerios", "Ignora pedra e terra", () -> s.nukerOres, () -> s.nukerOres = !s.nukerOres));
+                r.add(slider("Blocos por tick", 1, 6, 1, () -> s.nukerPerTick, v -> s.nukerPerTick = v, v -> v + " (criativo)"));
             }
             case 3 -> {
                 r.add(toggle("ESP Jogadores", "Caixa nos jogadores", () -> s.playerEsp, () -> s.playerEsp = !s.playerEsp));

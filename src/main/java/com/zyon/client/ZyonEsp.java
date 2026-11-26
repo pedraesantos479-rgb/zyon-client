@@ -123,6 +123,10 @@ public final class ZyonEsp {
         xrayList = n;
     }
 
+    public static boolean isOre(Block b) {
+        return oreColor(b, false) != 0;
+    }
+
     private static int oreColor(Block b, boolean rareOnly) {
         if (b == Blocks.DIAMOND_ORE || b == Blocks.DEEPSLATE_DIAMOND_ORE) return 0xFF22D3EE;
         if (b == Blocks.ANCIENT_DEBRIS) return 0xFFD97706;

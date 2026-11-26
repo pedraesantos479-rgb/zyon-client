@@ -19,7 +19,6 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
-import net.minecraft.item.PickaxeItem;
 import net.minecraft.item.Items;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.sound.SoundCategory;
@@ -44,6 +43,7 @@ public final class ZyonModules {
     private static int obsidianTimer;
     private static int totemTimer;
     private static int bridgeTimer;
+    private static BlockPos nukerTarget;
     private static int clickTimer;
     private static int refillTimer;
     private static final Item[] lastHotbar = new Item[9];
@@ -54,9 +54,6 @@ public final class ZyonModules {
     private static boolean sprintApplied;
     private static boolean zooming;
     private static int savedFov = 70;
-    private static boolean nukerWasDown;
-    private static final ArrayDeque<BlockPos> nukerQueue = new ArrayDeque<>();
-    private static BlockPos nukerCurrent;
 
     // estatisticas (lidas pelo HUD)
     public static double speedH;
@@ -102,12 +99,11 @@ public final class ZyonModules {
 
         if (mc.currentScreen != null || mc.interactionManager == null) {
             if (eating) stopEat(mc, p);
-            resetNuker(mc);
             return;
         }
-        tickNuker(mc, p, w, s);
         autoTotem(mc, p, s);
         autoBridge(mc, p, w, s);
+        nuker(mc, p, w, s);
         killAura(mc, p, w, s);
         triggerBot(mc, p, s);
         autoClicker(mc, p, s);
@@ -115,61 +111,6 @@ public final class ZyonModules {
         autoObsidian(mc, p, w, s);
         autoCrystal(mc, p, w, s);
         autoEat(mc, p, s);
-    }
-
-
-    // ---------- Nuker 3x3x3 ----------
-    // Usa apenas as chamadas normais de mineracao do cliente; o servidor continua
-    // validando ferramenta, alcance, velocidade e permissao de quebrar cada bloco.
-    private static void tickNuker(MinecraftClient mc, ClientPlayerEntity p, ClientWorld w, DiscoverySettings s) {
-        boolean down = s.nuker3x3x3 && mc.options.attackKey.isPressed()
-                && p.getMainHandStack().getItem() instanceof PickaxeItem
-                && mc.crosshairTarget instanceof BlockHitResult;
-        if (!down) {
-            resetNuker(mc);
-            return;
-        }
-
-        if (!nukerWasDown) {
-            BlockPos center = ((BlockHitResult) mc.crosshairTarget).getBlockPos();
-            nukerQueue.clear();
-            for (int dx = -1; dx <= 1; dx++) {
-                for (int dy = -1; dy <= 1; dy++) {
-                    for (int dz = -1; dz <= 1; dz++) {
-                        BlockPos pos = center.add(dx, dy, dz);
-                        BlockState state = w.getBlockState(pos);
-                        if (!state.isAir() && state.getHardness(w, pos) >= 0.0f
-                                && p.squaredDistanceTo(Vec3d.ofCenter(pos)) <= 36.0) {
-                            nukerQueue.addLast(pos.toImmutable());
-                        }
-                    }
-                }
-            }
-        }
-        nukerWasDown = true;
-
-        if (nukerCurrent == null) {
-            nukerCurrent = nukerQueue.pollFirst();
-            if (nukerCurrent == null) return;
-            if (w.getBlockState(nukerCurrent).isAir()) {
-                nukerCurrent = null;
-                return;
-            }
-            mc.interactionManager.attackBlock(nukerCurrent, Direction.UP);
-        } else if (mc.interactionManager.isBreakingBlock()) {
-            mc.interactionManager.updateBlockBreakingProgress(nukerCurrent, Direction.UP);
-        } else {
-            nukerCurrent = null;
-        }
-    }
-
-    private static void resetNuker(MinecraftClient mc) {
-        if (nukerWasDown && mc.interactionManager != null) {
-            mc.interactionManager.cancelBlockBreaking();
-        }
-        nukerWasDown = false;
-        nukerCurrent = null;
-        nukerQueue.clear();
     }
 
     // ---------- Estatisticas ----------
@@ -581,6 +522,60 @@ public final class ZyonModules {
         }
         if (best == null) return;
         placeBlock(mc, p, w, best, slot, true);
+    }
+
+    // ---------- Nuker (quebra blocos perto) ----------
+
+    private static boolean nukerValid(ClientWorld w, ClientPlayerEntity p, DiscoverySettings s, BlockPos pos) {
+        BlockState st = w.getBlockState(pos);
+        if (st.isAir() || !st.getFluidState().isEmpty()) return false;
+        if (st.getHardness(w, pos) < 0) return false;                 // bedrock etc.
+        if (pos.equals(p.getBlockPos().down())) return false;         // nao quebra o chao onde voce pisa
+        if (s.nukerOres && !ZyonEsp.isOre(st.getBlock())) return false;
+        double d = Math.sqrt(sq(pos.getX() + 0.5 - p.getX()) + sq(pos.getY() + 0.5 - p.getEyeY())
+                + sq(pos.getZ() + 0.5 - p.getZ()));
+        return d <= Math.min(s.nukerRange, 5);
+    }
+
+    private static BlockPos nukerPick(ClientWorld w, ClientPlayerEntity p, DiscoverySettings s) {
+        int r = Math.max(1, Math.min(5, s.nukerRange));
+        BlockPos base = p.getBlockPos();
+        BlockPos best = null;
+        double bd = 1e9;
+        for (int dx = -r; dx <= r; dx++) {
+            for (int dy = -r; dy <= r; dy++) {
+                for (int dz = -r; dz <= r; dz++) {
+                    BlockPos pos = base.add(dx, dy, dz);
+                    if (!nukerValid(w, p, s, pos)) continue;
+                    double d = sq(pos.getX() + 0.5 - p.getX()) + sq(pos.getY() + 0.5 - p.getEyeY())
+                            + sq(pos.getZ() + 0.5 - p.getZ());
+                    if (d < bd) {
+                        bd = d;
+                        best = pos;
+                    }
+                }
+            }
+        }
+        return best;
+    }
+
+    private static void nuker(MinecraftClient mc, ClientPlayerEntity p, ClientWorld w, DiscoverySettings s) {
+        if (!s.nuker) {
+            nukerTarget = null;
+            return;
+        }
+        boolean creative = p.isCreative();
+        int count = creative ? Math.max(1, s.nukerPerTick) : 1;
+        for (int k = 0; k < count; k++) {
+            if (nukerTarget == null || !nukerValid(w, p, s, nukerTarget)) nukerTarget = nukerPick(w, p, s);
+            if (nukerTarget == null) return;
+            Direction face = Direction.getFacing(p.getX() - (nukerTarget.getX() + 0.5),
+                    p.getEyeY() - (nukerTarget.getY() + 0.5), p.getZ() - (nukerTarget.getZ() + 0.5));
+            mc.interactionManager.updateBlockBreakingProgress(nukerTarget, face);
+            p.swingHand(Hand.MAIN_HAND);
+            if (!creative) return;       // sobrevivencia: um bloco por vez
+            nukerTarget = null;          // criativo: quebra na hora, vai pro proximo
+        }
     }
 
     // ---------- Auto Bridge ----------
