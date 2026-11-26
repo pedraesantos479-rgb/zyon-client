@@ -19,6 +19,7 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.PickaxeItem;
 import net.minecraft.item.Items;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.sound.SoundCategory;
@@ -53,6 +54,9 @@ public final class ZyonModules {
     private static boolean sprintApplied;
     private static boolean zooming;
     private static int savedFov = 70;
+    private static boolean nukerWasDown;
+    private static final ArrayDeque<BlockPos> nukerQueue = new ArrayDeque<>();
+    private static BlockPos nukerCurrent;
 
     // estatisticas (lidas pelo HUD)
     public static double speedH;
@@ -98,8 +102,10 @@ public final class ZyonModules {
 
         if (mc.currentScreen != null || mc.interactionManager == null) {
             if (eating) stopEat(mc, p);
+            resetNuker(mc);
             return;
         }
+        tickNuker(mc, p, w, s);
         autoTotem(mc, p, s);
         autoBridge(mc, p, w, s);
         killAura(mc, p, w, s);
@@ -109,6 +115,61 @@ public final class ZyonModules {
         autoObsidian(mc, p, w, s);
         autoCrystal(mc, p, w, s);
         autoEat(mc, p, s);
+    }
+
+
+    // ---------- Nuker 3x3x3 ----------
+    // Usa apenas as chamadas normais de mineracao do cliente; o servidor continua
+    // validando ferramenta, alcance, velocidade e permissao de quebrar cada bloco.
+    private static void tickNuker(MinecraftClient mc, ClientPlayerEntity p, ClientWorld w, DiscoverySettings s) {
+        boolean down = s.nuker3x3x3 && mc.options.attackKey.isPressed()
+                && p.getMainHandStack().getItem() instanceof PickaxeItem
+                && mc.crosshairTarget instanceof BlockHitResult;
+        if (!down) {
+            resetNuker(mc);
+            return;
+        }
+
+        if (!nukerWasDown) {
+            BlockPos center = ((BlockHitResult) mc.crosshairTarget).getBlockPos();
+            nukerQueue.clear();
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        BlockPos pos = center.add(dx, dy, dz);
+                        BlockState state = w.getBlockState(pos);
+                        if (!state.isAir() && state.getHardness(w, pos) >= 0.0f
+                                && p.squaredDistanceTo(Vec3d.ofCenter(pos)) <= 36.0) {
+                            nukerQueue.addLast(pos.toImmutable());
+                        }
+                    }
+                }
+            }
+        }
+        nukerWasDown = true;
+
+        if (nukerCurrent == null) {
+            nukerCurrent = nukerQueue.pollFirst();
+            if (nukerCurrent == null) return;
+            if (w.getBlockState(nukerCurrent).isAir()) {
+                nukerCurrent = null;
+                return;
+            }
+            mc.interactionManager.attackBlock(nukerCurrent, Direction.UP);
+        } else if (mc.interactionManager.isBreakingBlock()) {
+            mc.interactionManager.updateBlockBreakingProgress(nukerCurrent, Direction.UP);
+        } else {
+            nukerCurrent = null;
+        }
+    }
+
+    private static void resetNuker(MinecraftClient mc) {
+        if (nukerWasDown && mc.interactionManager != null) {
+            mc.interactionManager.cancelBlockBreaking();
+        }
+        nukerWasDown = false;
+        nukerCurrent = null;
+        nukerQueue.clear();
     }
 
     // ---------- Estatisticas ----------

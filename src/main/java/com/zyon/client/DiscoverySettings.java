@@ -45,6 +45,7 @@ public final class DiscoverySettings {
     public boolean autoRefill = false;
     public boolean autoRespawn = false;
     public boolean autoBridge = false;
+    public boolean nuker3x3x3 = false;
     public int bridgeSpeed = 8;          // 1..10
     public boolean fullbright = false;
 

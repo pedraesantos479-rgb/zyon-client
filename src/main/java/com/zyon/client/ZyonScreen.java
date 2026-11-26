@@ -116,6 +116,7 @@ public final class ZyonScreen extends Screen {
                 r.add(toggle("Fullbright", "Ve no escuro", () -> s.fullbright, () -> s.fullbright = !s.fullbright));
                 r.add(toggle("Zoom", "Segure a tecla C", () -> s.zoom, () -> s.zoom = !s.zoom));
                 r.add(toggle("Auto Bridge", "Bloco embaixo na ponte", () -> s.autoBridge, () -> s.autoBridge = !s.autoBridge));
+                r.add(toggle("Nuker 3x3x3", "Quebra em volta do bloco mirado com picareta", () -> s.nuker3x3x3, () -> s.nuker3x3x3 = !s.nuker3x3x3));
                 r.add(slider("Velocidade ponte", 1, 10, 1, () -> s.bridgeSpeed, v -> s.bridgeSpeed = v, v -> v + "/10"));
             }
             case 3 -> {
