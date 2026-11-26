@@ -34,7 +34,6 @@ import java.util.List;
 public final class ZyonModules {
     // estado
     private static boolean addedNightVision;
-    private static boolean espWasOn;
     private static int crystalTimer;
     private static int obsidianTimer;
     private static int clickTimer;
@@ -63,7 +62,8 @@ public final class ZyonModules {
 
     private ZyonModules() {}
 
-    public static void renderHud(DrawContext ctx) {
+    public static void renderHud(DrawContext ctx, float delta) {
+        ZyonEsp.render(ctx, delta);
         ZyonHud.render(ctx);
     }
 
@@ -84,7 +84,7 @@ public final class ZyonModules {
         sprint(mc, p, s);
         toggles(mc, s);
         fullbright(p, s);
-        esp(w, p, s);
+        ZyonEsp.tickScan(mc, p, w, s);
         zoom(mc, s);
         autoRefill(mc, p, s);
 
@@ -167,20 +167,6 @@ public final class ZyonModules {
         } else if (addedNightVision) {
             p.removeStatusEffect(StatusEffects.NIGHT_VISION);
             addedNightVision = false;
-        }
-    }
-
-    private static void esp(ClientWorld w, ClientPlayerEntity p, DiscoverySettings s) {
-        if (s.playerEsp) {
-            for (PlayerEntity e : w.getPlayers()) {
-                if (e != p) e.setGlowing(true);
-            }
-            espWasOn = true;
-        } else if (espWasOn) {
-            for (PlayerEntity e : w.getPlayers()) {
-                if (e != p) e.setGlowing(false);
-            }
-            espWasOn = false;
         }
     }
 

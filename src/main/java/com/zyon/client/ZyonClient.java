@@ -36,6 +36,6 @@ public final class ZyonClient implements ClientModInitializer {
             ZyonModules.tick(client);
         });
         HudElementRegistry.attachElementBefore(VanillaHudElements.CHAT, Identifier.of("zyon", "hud"),
-                (context, tickCounter) -> ZyonModules.renderHud(context));
+                (context, tickCounter) -> ZyonModules.renderHud(context, tickCounter.getTickProgress(false)));
     }
 }

@@ -77,6 +77,14 @@ public final class DiscoverySettings {
     public boolean hudModules = true;
     public boolean hudFindings = true;
     public boolean playerEsp = false;
+    public boolean entityEsp = false;
+    public boolean itemEsp = false;
+    public boolean chestEsp = false;
+    public boolean storageEsp = false;
+    public boolean tracers = false;
+    public boolean nameTags = false;
+    public boolean hitboxViz = false;
+    public int espRange = 64;
     public boolean zoom = false;
 
     public boolean anyScannerEnabled() {
