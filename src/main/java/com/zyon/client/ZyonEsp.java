@@ -1,5 +1,8 @@
 package com.zyon.client;
 
+import net.minecraft.block.Block;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.Blocks;
 import net.minecraft.block.entity.AbstractFurnaceBlockEntity;
 import net.minecraft.block.entity.BarrelBlockEntity;
 import net.minecraft.block.entity.BlockEntity;
@@ -46,6 +49,8 @@ public final class ZyonEsp {
 
     private static volatile List<Spot> spots = new ArrayList<>();
     private static int scanTimer;
+    private static volatile List<Spot> xrayList = new ArrayList<>();
+    private static int xrayTimer;
 
     // camera
     private static double cx, cy, cz, fx, fy, fz, rx, ry, rz, ux, uy, uz, scale;
@@ -83,6 +88,56 @@ public final class ZyonEsp {
         spots = n;
     }
 
+    // ---------- X-Ray (marca minerios atraves das paredes) ----------
+
+    public static void tickXray(ClientPlayerEntity p, ClientWorld w, DiscoverySettings s) {
+        if (!s.xray) {
+            if (!xrayList.isEmpty()) xrayList = new ArrayList<>();
+            return;
+        }
+        if (xrayTimer-- > 0) return;
+        xrayTimer = 30;
+        int r = Math.max(4, Math.min(24, s.xrayRange));
+        List<Spot> n = new ArrayList<>();
+        BlockPos.Mutable m = new BlockPos.Mutable();
+        int px = p.getBlockX();
+        int py = p.getBlockY();
+        int pz = p.getBlockZ();
+        int minY = Math.max(w.getBottomY(), py - r);
+        int maxY = Math.min(w.getBottomY() + w.getHeight() - 1, py + r);
+        outer:
+        for (int x = px - r; x <= px + r; x++) {
+            for (int z = pz - r; z <= pz + r; z++) {
+                if (w.getChunkManager().getWorldChunk(x >> 4, z >> 4) == null) continue;
+                for (int y = minY; y <= maxY; y++) {
+                    m.set(x, y, z);
+                    BlockState st = w.getBlockState(m);
+                    int col = oreColor(st.getBlock(), s.xrayRare);
+                    if (col != 0) {
+                        n.add(new Spot(m.toImmutable(), col));
+                        if (n.size() >= 400) break outer;
+                    }
+                }
+            }
+        }
+        xrayList = n;
+    }
+
+    private static int oreColor(Block b, boolean rareOnly) {
+        if (b == Blocks.DIAMOND_ORE || b == Blocks.DEEPSLATE_DIAMOND_ORE) return 0xFF22D3EE;
+        if (b == Blocks.ANCIENT_DEBRIS) return 0xFFD97706;
+        if (b == Blocks.EMERALD_ORE || b == Blocks.DEEPSLATE_EMERALD_ORE) return 0xFF22C55E;
+        if (b == Blocks.GOLD_ORE || b == Blocks.DEEPSLATE_GOLD_ORE || b == Blocks.NETHER_GOLD_ORE) return 0xFFFACC15;
+        if (rareOnly) return 0;
+        if (b == Blocks.IRON_ORE || b == Blocks.DEEPSLATE_IRON_ORE) return 0xFFD6B79B;
+        if (b == Blocks.COAL_ORE || b == Blocks.DEEPSLATE_COAL_ORE) return 0xFF9CA3AF;
+        if (b == Blocks.COPPER_ORE || b == Blocks.DEEPSLATE_COPPER_ORE) return 0xFFF97316;
+        if (b == Blocks.LAPIS_ORE || b == Blocks.DEEPSLATE_LAPIS_ORE) return 0xFF3B82F6;
+        if (b == Blocks.REDSTONE_ORE || b == Blocks.DEEPSLATE_REDSTONE_ORE) return 0xFFEF4444;
+        if (b == Blocks.NETHER_QUARTZ_ORE) return 0xFFF3F4F6;
+        return 0;
+    }
+
     private static int classify(BlockEntity be) {
         if (be instanceof ChestBlockEntity) return 0;
         if (be instanceof EnderChestBlockEntity) return 1;
@@ -102,7 +157,7 @@ public final class ZyonEsp {
         if (p == null || w == null) return;
         DiscoverySettings s = ZyonClient.SETTINGS;
         if (!(s.playerEsp || s.entityEsp || s.itemEsp || s.chestEsp || s.storageEsp
-                || s.nameTags || s.hitboxViz)) return;
+                || s.nameTags || s.hitboxViz || s.xray)) return;
         if (!mc.options.getPerspective().isFirstPerson()) return;
 
         TextRenderer tr = mc.textRenderer;
@@ -176,6 +231,19 @@ public final class ZyonEsp {
                 double dz = bp.getZ() + 0.5 - lp.z;
                 if (dx * dx + dy * dy + dz * dz > range * range) continue;
                 drawTarget(ctx, new Box(bp), sp.kind() <= 1 ? CHEST : STORAGE, false, s);
+            }
+        }
+
+        // x-ray (minerios)
+        if (s.xray) {
+            double xr = Math.min(24, s.xrayRange) + 2.0;
+            for (Spot sp : xrayList) {
+                BlockPos bp = sp.pos();
+                double dx = bp.getX() + 0.5 - lp.x;
+                double dy = bp.getY() + 0.5 - lp.y;
+                double dz = bp.getZ() + 0.5 - lp.z;
+                if (dx * dx + dy * dy + dz * dz > xr * xr * 3) continue;
+                drawTarget(ctx, new Box(bp), sp.kind(), true, s);
             }
         }
 
