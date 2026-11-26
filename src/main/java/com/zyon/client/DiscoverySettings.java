@@ -24,7 +24,9 @@ public final class DiscoverySettings {
     public int totemHealth = 0;          // 0 = sempre
     public boolean cpvpAll = false;      // crystal + obsidian + totem juntos
     public int minTargetDamage = 4;
-    public int maxSelfDamage = 8;
+    public int maxSelfDamage = 0;        // 0 = sem limite
+    public int selfProtection = 60;      // % de reducao por encantamentos (so na estimativa)
+    public boolean cpvpPlayersOnly = true;
     public int cpvpSpeed = 6;            // 1..10 (barra de velocidade)
 
     // Combate 2
@@ -94,6 +96,9 @@ public final class DiscoverySettings {
     public boolean hitboxViz = false;
     public int espRange = 64;
     public boolean zoom = false;
+    public boolean xray = false;
+    public boolean xrayRare = true;
+    public int xrayRange = 16;
 
     public boolean anyScannerEnabled() {
         return baseFinder || chunkFinder || amethystScanner;

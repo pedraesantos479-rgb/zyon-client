@@ -92,6 +92,7 @@ public final class ZyonModules {
         toggles(mc, s);
         fullbright(p, s);
         ZyonEsp.tickScan(mc, p, w, s);
+        ZyonEsp.tickXray(p, w, s);
         zoom(mc, s);
         autoRefill(mc, p, s);
 
@@ -336,38 +337,38 @@ public final class ZyonModules {
         if (!(s.autoCrystal || s.cpvpAll)) return;
         if (crystalTimer-- > 0) return;
         crystalTimer = delayTicks(s.cpvpSpeed);
-        double range = s.crystalRange;
+        double placeRange = Math.min(s.crystalRange, 4.5);
+        double breakRange = Math.min(s.crystalRange, 4.0);
 
-        PlayerEntity target = nearestEnemy(p, w, 10);
+        LivingEntity target = nearestLiving(p, w, 10, s.cpvpPlayersOnly);
         if (target == null) return;
-        double selfHp = p.getHealth() + p.getAbsorptionAmount();
 
-        // 1) quebra o melhor crystal (que nao machuca demais voce)
+        // 1) quebra o crystal que mais machuca o alvo (e e seguro pra voce)
         List<EndCrystalEntity> crystals = w.getEntitiesByClass(EndCrystalEntity.class,
                 target.getBoundingBox().expand(8),
-                c -> c.isAlive() && p.distanceTo(c) <= range);
+                c -> c.isAlive() && p.distanceTo(c) <= breakRange);
         EndCrystalEntity bestC = null;
         double bestScore = -1e9;
         for (EndCrystalEntity c : crystals) {
-            double self = explosionDamage(w, p, c.getX(), c.getY(), c.getZ());
-            if (self > s.maxSelfDamage || self >= selfHp - 1.0) continue;
-            double tdmg = explosionDamage(w, target, c.getX(), c.getY(), c.getZ());
-            double score = tdmg - self * 0.5;
+            if (!selfSafe(w, p, c.getX(), c.getY(), c.getZ(), s)) continue;
+            double score = explosionDamage(w, target, c.getX(), c.getY(), c.getZ());
             if (score > bestScore) {
                 bestScore = score;
                 bestC = c;
             }
         }
         if (bestC != null) {
+            lookAtPoint(p, bestC.getBoundingBox().getCenter());
             mc.interactionManager.attackEntity(p, bestC);
             p.swingHand(Hand.MAIN_HAND);
             markAttack();
-            return;
+            if (s.cpvpSpeed < 9) return;
         }
 
-        // 2) coloca crystal na base com melhor dano
+        // 2) coloca crystal na melhor base
+        boolean offhand = p.getOffHandStack().isOf(Items.END_CRYSTAL);
         int slot = findHotbar(p, Items.END_CRYSTAL);
-        if (slot < 0) return;
+        if (!offhand && slot < 0) return;
         BlockPos tp = target.getBlockPos();
         BlockPos best = null;
         double bestPlace = -1e9;
@@ -380,12 +381,11 @@ public final class ZyonModules {
                     double cy = pos.getY() + 1.0;
                     double cz = pos.getZ() + 0.5;
                     double dEye = Math.sqrt(sq(cx - p.getX()) + sq(cy - p.getEyeY()) + sq(cz - p.getZ()));
-                    if (dEye > range) continue;
-                    double self = explosionDamage(w, p, cx, cy, cz);
-                    if (self > s.maxSelfDamage || self >= selfHp - 1.0) continue;
+                    if (dEye > placeRange) continue;
+                    if (!selfSafe(w, p, cx, cy, cz, s)) continue;
                     double tdmg = explosionDamage(w, target, cx, cy, cz);
                     if (tdmg < s.minTargetDamage) continue;
-                    double score = tdmg - self * 0.5;
+                    double score = tdmg - selfDamage(w, p, cx, cy, cz, s) * 0.5;
                     if (score > bestPlace) {
                         bestPlace = score;
                         best = pos;
@@ -394,10 +394,46 @@ public final class ZyonModules {
             }
         }
         if (best == null) return;
-        selectSlot(p, slot);
-        BlockHitResult hit = new BlockHitResult(Vec3d.ofCenter(best).add(0, 0.5, 0), Direction.UP, best, false);
-        mc.interactionManager.interactBlock(p, Hand.MAIN_HAND, hit);
-        p.swingHand(Hand.MAIN_HAND);
+        if (!offhand) selectSlot(p, slot);
+        Vec3d hitVec = Vec3d.ofCenter(best).add(0, 0.5, 0);
+        lookAtPoint(p, hitVec);
+        Hand hand = offhand ? Hand.OFF_HAND : Hand.MAIN_HAND;
+        mc.interactionManager.interactBlock(p, hand, new BlockHitResult(hitVec, Direction.UP, best, false));
+        p.swingHand(hand);
+    }
+
+    private static void lookAtPoint(ClientPlayerEntity p, Vec3d c) {
+        double dx = c.x - p.getX();
+        double dy = c.y - p.getEyeY();
+        double dz = c.z - p.getZ();
+        double hd = Math.sqrt(dx * dx + dz * dz);
+        p.setYaw((float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0));
+        p.setPitch((float) -Math.toDegrees(Math.atan2(dy, hd)));
+    }
+
+    private static double selfDamage(ClientWorld w, ClientPlayerEntity p, double x, double y, double z, DiscoverySettings s) {
+        return explosionDamage(w, p, x, y, z) * (1.0 - s.selfProtection / 100.0);
+    }
+
+    private static boolean selfSafe(ClientWorld w, ClientPlayerEntity p, double x, double y, double z, DiscoverySettings s) {
+        if (s.maxSelfDamage == 0) return true;
+        double d = selfDamage(w, p, x, y, z, s);
+        return d <= s.maxSelfDamage && d < p.getHealth() + p.getAbsorptionAmount() - 1.0;
+    }
+
+    public static LivingEntity nearestLiving(ClientPlayerEntity p, ClientWorld w, double r, boolean playersOnly) {
+        List<LivingEntity> l = w.getEntitiesByClass(LivingEntity.class, p.getBoundingBox().expand(r),
+                e -> e != p && e.isAlive() && !e.isSpectator() && (!playersOnly || e instanceof PlayerEntity));
+        LivingEntity best = null;
+        double bd = 1e9;
+        for (LivingEntity e : l) {
+            double d = p.distanceTo(e);
+            if (d <= r && d < bd) {
+                best = e;
+                bd = d;
+            }
+        }
+        return best;
     }
 
     /** Dano estimado de um crystal (formula do jogo, sem checar paredes). */
@@ -438,55 +474,52 @@ public final class ZyonModules {
         if (obsidianTimer-- > 0) return;
         obsidianTimer = 1 + delayTicks(s.cpvpSpeed);
 
-        PlayerEntity target = nearestEnemy(p, w, 10);
+        LivingEntity target = nearestLiving(p, w, 10, s.cpvpPlayersOnly);
         if (target == null) return;
         int slot = findHotbar(p, Items.OBSIDIAN);
         if (slot < 0) return;
-
+        double placeRange = Math.min(s.crystalRange, 4.5);
         BlockPos tp = target.getBlockPos();
-        for (int dx = -2; dx <= 2; dx++) {
-            for (int dz = -2; dz <= 2; dz++) {
-                for (int dy = -2; dy <= 0; dy++) {
-                    if (isCrystalBase(w, tp.add(dx, dy, dz))) return;
+
+        // ja existe uma base ao alcance perto do alvo? entao nao poe outra
+        for (int dx = -3; dx <= 3; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dz = -3; dz <= 3; dz++) {
+                    BlockPos b = tp.add(dx, dy, dz);
+                    if (!isCrystalBase(w, b)) continue;
+                    double d = Math.sqrt(sq(b.getX() + 0.5 - p.getX()) + sq(b.getY() + 1.0 - p.getEyeY())
+                            + sq(b.getZ() + 0.5 - p.getZ()));
+                    if (d <= placeRange) return;
                 }
             }
         }
 
-        BlockPos bestPlace = null;
-        BlockPos bestSupport = null;
-        Direction bestFace = null;
+        // base nova: bloco em cima do chao, ao lado do alvo, com 2 blocos livres em cima
+        BlockPos best = null;
         double bestD = 1e9;
-        Direction[] dirs = {Direction.DOWN, Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST};
         for (int dx = -2; dx <= 2; dx++) {
             for (int dz = -2; dz <= 2; dz++) {
                 if (dx == 0 && dz == 0) continue;
-                BlockPos pos = tp.add(dx, -1, dz);
+                BlockPos pos = tp.add(dx, 0, dz);
                 if (!w.getBlockState(pos).isAir()) continue;
                 if (!w.getBlockState(pos.up()).isAir() || !w.getBlockState(pos.up(2)).isAir()) continue;
+                BlockPos below = pos.down();
+                if (!w.getBlockState(below).isSolidBlock(w, below)) continue;
                 if (!w.getOtherEntities((Entity) null, new Box(pos)).isEmpty()) continue;
                 double dEye = Math.sqrt(sq(pos.getX() + 0.5 - p.getX()) + sq(pos.getY() + 0.5 - p.getEyeY())
                         + sq(pos.getZ() + 0.5 - p.getZ()));
-                if (dEye > 4.5) continue;
-                for (Direction dir : dirs) {
-                    BlockPos n = pos.offset(dir);
-                    if (w.getBlockState(n).isAir()) continue;
-                    double dt = sq(pos.getX() + 0.5 - target.getX()) + sq(pos.getZ() + 0.5 - target.getZ());
-                    if (dt < bestD) {
-                        bestD = dt;
-                        bestPlace = pos;
-                        bestSupport = n;
-                        bestFace = dir.getOpposite();
-                    }
-                    break;
+                if (dEye > placeRange) continue;
+                double dSelf = Math.sqrt(sq(pos.getX() + 0.5 - p.getX()) + sq(pos.getZ() + 0.5 - p.getZ()));
+                if (dSelf < 1.5 && Math.abs(pos.getY() - p.getY()) < 2.0) continue;
+                double dt = sq(pos.getX() + 0.5 - target.getX()) + sq(pos.getZ() + 0.5 - target.getZ());
+                if (dt < bestD) {
+                    bestD = dt;
+                    best = pos;
                 }
             }
         }
-        if (bestPlace == null) return;
-        selectSlot(p, slot);
-        Vec3d hitVec = Vec3d.ofCenter(bestSupport).add(
-                bestFace.getOffsetX() * 0.5, bestFace.getOffsetY() * 0.5, bestFace.getOffsetZ() * 0.5);
-        mc.interactionManager.interactBlock(p, Hand.MAIN_HAND, new BlockHitResult(hitVec, bestFace, bestSupport, false));
-        p.swingHand(Hand.MAIN_HAND);
+        if (best == null) return;
+        placeBlock(mc, p, w, best, slot, true);
     }
 
     // ---------- Auto Bridge ----------
@@ -510,14 +543,14 @@ public final class ZyonModules {
         for (BlockPos pos : cands) {
             if (!w.getBlockState(pos).isAir()) continue;
             if (!w.getOtherEntities((Entity) null, new Box(pos)).isEmpty()) continue;
-            if (placeBlock(mc, p, w, pos, slot)) {
+            if (placeBlock(mc, p, w, pos, slot, false)) {
                 bridgeTimer = delayTicks(s.bridgeSpeed);
                 return;
             }
         }
     }
 
-    private static boolean placeBlock(MinecraftClient mc, ClientPlayerEntity p, ClientWorld w, BlockPos pos, int slot) {
+    private static boolean placeBlock(MinecraftClient mc, ClientPlayerEntity p, ClientWorld w, BlockPos pos, int slot, boolean rotate) {
         Direction[] dirs = {Direction.DOWN, Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST};
         for (Direction dir : dirs) {
             BlockPos n = pos.offset(dir);
@@ -526,6 +559,7 @@ public final class ZyonModules {
             Vec3d hitVec = Vec3d.ofCenter(n).add(face.getOffsetX() * 0.5, face.getOffsetY() * 0.5, face.getOffsetZ() * 0.5);
             int prev = p.getInventory().getSelectedSlot();
             selectSlot(p, slot);
+            if (rotate) lookAtPoint(p, hitVec);
             mc.interactionManager.interactBlock(p, Hand.MAIN_HAND, new BlockHitResult(hitVec, face, n, false));
             p.swingHand(Hand.MAIN_HAND);
             selectSlot(p, prev);

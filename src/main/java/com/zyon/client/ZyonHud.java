@@ -219,6 +219,7 @@ public final class ZyonHud {
         if (s.autoObsidian) l.add("AutoObsidian");
         if (s.autoTotem) l.add("AutoTotem");
         if (s.autoBridge) l.add("AutoBridge");
+        if (s.xray) l.add("X-Ray");
         if (s.cpvpAll) l.add("CPvP");
         if (s.triggerBot) l.add("TriggerBot");
         if (s.autoClicker) l.add("AutoClicker");

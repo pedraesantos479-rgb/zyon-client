@@ -94,10 +94,14 @@ public final class ZyonScreen extends Screen {
                 r.add(toggle("CPvP Tudo-em-1", "Obsidian + Crystal", () -> s.cpvpAll, () -> s.cpvpAll = !s.cpvpAll));
                 r.add(toggle("Auto Crystal", "Poe e quebra crystals", () -> s.autoCrystal, () -> s.autoCrystal = !s.autoCrystal));
                 r.add(toggle("Auto Obsidian", "Poe a base do crystal", () -> s.autoObsidian, () -> s.autoObsidian = !s.autoObsidian));
+                r.add(toggle("So jogadores", "Desligue p/ testar em mobs", () -> s.cpvpPlayersOnly,
+                        () -> s.cpvpPlayersOnly = !s.cpvpPlayersOnly));
                 r.add(slider("Velocidade", 1, 10, 1, () -> s.cpvpSpeed, v -> s.cpvpSpeed = v, v -> v + "/10"));
                 r.add(slider("Alcance", 3, 6, 1, () -> s.crystalRange, v -> s.crystalRange = v, v -> v + " bl"));
                 r.add(slider("Dano minimo", 1, 12, 1, () -> s.minTargetDamage, v -> s.minTargetDamage = v, v -> v + " hp"));
-                r.add(slider("Dano max (voce)", 2, 20, 2, () -> s.maxSelfDamage, v -> s.maxSelfDamage = v, v -> v + " hp"));
+                r.add(slider("Dano max (voce)", 0, 40, 2, () -> s.maxSelfDamage, v -> s.maxSelfDamage = v,
+                        v -> v == 0 ? "sem limite" : v + " hp"));
+                r.add(slider("Protecao armadura", 0, 80, 10, () -> s.selfProtection, v -> s.selfProtection = v, v -> v + "%"));
                 r.add(toggle("Auto Totem", "Totem na mao", () -> s.autoTotem, () -> s.autoTotem = !s.autoTotem));
                 r.add(slider("Totem quando", 0, 20, 2, () -> s.totemHealth, v -> s.totemHealth = v,
                         v -> v == 0 ? "sempre" : "<= " + v));
@@ -124,8 +128,10 @@ public final class ZyonScreen extends Screen {
                 r.add(toggle("Name Tags", "Nome, vida e distancia", () -> s.nameTags, () -> s.nameTags = !s.nameTags));
                 r.add(toggle("Hitbox", "Caixa 3D do alvo", () -> s.hitboxViz, () -> s.hitboxViz = !s.hitboxViz));
                 r.add(slider("Alcance ESP", 32, 128, 16, () -> s.espRange, v -> s.espRange = v, v -> v + " bl"));
+                r.add(toggle("X-Ray", "Marca minerios na parede", () -> s.xray, () -> s.xray = !s.xray));
+                r.add(toggle("X-Ray so raros", "Diamante, debris, ouro", () -> s.xrayRare, () -> s.xrayRare = !s.xrayRare));
+                r.add(slider("Alcance X-Ray", 8, 24, 4, () -> s.xrayRange, v -> s.xrayRange = v, v -> v + " bl"));
                 r.add(toggle("HUD modulos", "Lista de ativos", () -> s.hudModules, () -> s.hudModules = !s.hudModules));
-                r.add(toggle("HUD achados", "Resultados do scanner", () -> s.hudFindings, () -> s.hudFindings = !s.hudFindings));
                 r.add(toggle("Mira custom", "Mira colorida", () -> s.customCrosshair, () -> s.customCrosshair = !s.customCrosshair));
             }
             case 4 -> {
@@ -165,6 +171,7 @@ public final class ZyonScreen extends Screen {
                 r.add(toggle("Amethyst", "Procura ametista", () -> s.amethystScanner, () -> s.amethystScanner = !s.amethystScanner));
                 r.add(cycle("Modo Finder", "Tipo de busca", () -> s.finderMode.name(), s::cycleFinderMode));
                 r.add(cycle("Modo Amethyst", "Tipo de busca", () -> s.amethystMode.name(), s::cycleAmethystMode));
+                r.add(toggle("HUD achados", "Resultados na tela", () -> s.hudFindings, () -> s.hudFindings = !s.hudFindings));
                 r.add(slider("Alcance scanner", 2, 8, 1, () -> s.rangeChunks, v -> s.rangeChunks = v, v -> v + " ch"));
             }
         }
