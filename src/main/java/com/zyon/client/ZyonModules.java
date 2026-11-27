@@ -36,6 +36,7 @@ import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.Difficulty;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
@@ -52,7 +53,6 @@ public final class ZyonModules {
     private static ArmorStandEntity fcStand;
     private static ClientWorld fcWorld;
     private static double fcX, fcY, fcZ;
-    private static double fcPlayerX, fcPlayerY, fcPlayerZ;
     private static final int FC_ID = -8421;
     private static int clickTimer;
     private static int refillTimer;
@@ -572,36 +572,38 @@ public final class ZyonModules {
     private static boolean nukerValid(ClientWorld w, ClientPlayerEntity p, DiscoverySettings s, BlockPos pos) {
         BlockState st = w.getBlockState(pos);
         if (st.isAir() || !st.getFluidState().isEmpty()) return false;
-        // Nunca quebre a obsidiana usada pelo Auto Obsidian/Auto Crystal.
-        if (st.isOf(Blocks.OBSIDIAN)) return false;
         if (st.getHardness(w, pos) < 0) return false;                 // bedrock etc.
         if (pos.equals(p.getBlockPos().down())) return false;         // nao quebra o chao onde voce pisa
         if (s.nukerOres && !ZyonEsp.isOre(st.getBlock())) return false;
         double d = Math.sqrt(sq(pos.getX() + 0.5 - p.getX()) + sq(pos.getY() + 0.5 - p.getEyeY())
                 + sq(pos.getZ() + 0.5 - p.getZ()));
-        return d <= Math.min(s.nukerRange, 6);
+        return d <= Math.min(s.nukerRange, 16);
     }
 
-    private static BlockPos nukerPick(ClientWorld w, ClientPlayerEntity p, DiscoverySettings s) {
-        int r = Math.max(1, Math.min(6, s.nukerRange));
+    /** Blocos validos perto, do mais proximo pro mais longe (anel por anel, so ate achar o suficiente). */
+    private static List<BlockPos> nukerCollect(ClientWorld w, ClientPlayerEntity p, DiscoverySettings s, int limit) {
+        int r = Math.max(1, Math.min(16, s.nukerRange));
         BlockPos base = p.getBlockPos();
-        BlockPos best = null;
-        double bd = 1e9;
-        for (int dx = -r; dx <= r; dx++) {
-            for (int dy = -r; dy <= r; dy++) {
-                for (int dz = -r; dz <= r; dz++) {
-                    BlockPos pos = base.add(dx, dy, dz);
-                    if (!nukerValid(w, p, s, pos)) continue;
-                    double d = sq(pos.getX() + 0.5 - p.getX()) + sq(pos.getY() + 0.5 - p.getEyeY())
-                            + sq(pos.getZ() + 0.5 - p.getZ());
-                    if (d < bd) {
-                        bd = d;
-                        best = pos;
+        List<BlockPos> list = new ArrayList<>();
+        for (int ring = 0; ring <= r && list.size() < limit; ring++) {
+            for (int dx = -ring; dx <= ring; dx++) {
+                for (int dy = -ring; dy <= ring; dy++) {
+                    for (int dz = -ring; dz <= ring; dz++) {
+                        if (Math.max(Math.abs(dx), Math.max(Math.abs(dy), Math.abs(dz))) != ring) continue;
+                        BlockPos pos = base.add(dx, dy, dz);
+                        if (nukerValid(w, p, s, pos)) list.add(pos);
                     }
                 }
             }
         }
-        return best;
+        list.sort(Comparator.comparingDouble(b -> sq(b.getX() + 0.5 - p.getX()) + sq(b.getY() + 0.5 - p.getEyeY())
+                + sq(b.getZ() + 0.5 - p.getZ())));
+        return list;
+    }
+
+    private static Direction faceTo(ClientPlayerEntity p, BlockPos pos) {
+        return Direction.getFacing(p.getX() - (pos.getX() + 0.5), p.getEyeY() - (pos.getY() + 0.5),
+                p.getZ() - (pos.getZ() + 0.5));
     }
 
     /** Troca para a melhor ferramenta da hotbar para esse bloco. */
@@ -635,32 +637,55 @@ public final class ZyonModules {
             return;
         }
         boolean creative = p.isCreative();
-        int count = creative ? Math.max(1, s.nukerPerTick) : 1;
-        for (int k = 0; k < count; k++) {
-            boolean fresh = false;
-            if (nukerTarget == null || !nukerValid(w, p, s, nukerTarget)) {
-                nukerTarget = nukerPick(w, p, s);
-                fresh = true;
+        int limit = Math.max(1, Math.min(300, s.nukerPerTick));
+
+        // sobrevivencia: continua o bloco lento que ja esta quebrando
+        if (!creative && nukerTarget != null && mc.interactionManager.isBreakingBlock()
+                && nukerValid(w, p, s, nukerTarget)) {
+            mc.interactionManager.updateBlockBreakingProgress(nukerTarget, faceTo(p, nukerTarget));
+            p.swingHand(Hand.MAIN_HAND);
+            return;
+        }
+        nukerTarget = null;
+
+        List<BlockPos> list = nukerCollect(w, p, s, limit);
+        if (list.isEmpty()) {
+            nukerRestore(p);
+            return;
+        }
+        int done = 0;
+        BlockPos slow = null;
+        for (BlockPos pos : list) {
+            if (done >= limit) break;
+            BlockState st = w.getBlockState(pos);
+            if (st.isAir()) continue;
+            if (s.nukerAutoTool) nukerTool(p, st);
+            // blocos que quebram na hora (criativo ou ferramenta forte) saem varios por tick
+            boolean instant = creative || st.calcBlockBreakingDelta(p, w, pos) >= 1.0f;
+            if (!instant) {
+                if (slow == null) slow = pos;
+                continue;
             }
-            if (nukerTarget == null) {
-                nukerRestore(p);
-                return;
-            }
-            if (fresh && s.nukerAutoTool) nukerTool(p, w.getBlockState(nukerTarget));
-            Direction face = Direction.getFacing(p.getX() - (nukerTarget.getX() + 0.5),
-                    p.getEyeY() - (nukerTarget.getY() + 0.5), p.getZ() - (nukerTarget.getZ() + 0.5));
-            // o jogo espera 5 ticks entre blocos; chamar de novo "gasta" essa espera no mesmo tick
+            Direction face = faceTo(p, pos);
             for (int c = 0; c < 6; c++) {
-                mc.interactionManager.updateBlockBreakingProgress(nukerTarget, face);
-                if (creative) {
-                    if (w.getBlockState(nukerTarget).isAir()) break;
-                } else if (mc.interactionManager.isBreakingBlock()) {
-                    break;
-                }
+                mc.interactionManager.updateBlockBreakingProgress(pos, face);
+                if (w.getBlockState(pos).isAir()) break;
+            }
+            done++;
+        }
+        if (done > 0) {
+            p.swingHand(Hand.MAIN_HAND);
+            return;
+        }
+        if (slow != null) {
+            nukerTarget = slow;
+            if (s.nukerAutoTool) nukerTool(p, w.getBlockState(slow));
+            Direction face = faceTo(p, slow);
+            for (int c = 0; c < 6; c++) {
+                mc.interactionManager.updateBlockBreakingProgress(slow, face);
+                if (mc.interactionManager.isBreakingBlock()) break;
             }
             p.swingHand(Hand.MAIN_HAND);
-            if (!creative) return;       // sobrevivencia: um bloco por vez
-            nukerTarget = null;
         }
     }
 
@@ -669,10 +694,16 @@ public final class ZyonModules {
     public static void startTick(MinecraftClient mc) {
         DiscoverySettings s = ZyonClient.SETTINGS;
         if (s.freecam && fcStand != null && mc.currentScreen == null) {
-            // Nao altere o estado das teclas: WASD/Space/Shift tambem
-            // sao os controles da camera e zerar esses KeyBindings travava tudo.
-            mc.player.setVelocity(Vec3d.ZERO);
-            mc.player.setSprinting(false);
+            // o corpo do jogador fica parado enquanto a camera voa
+            mc.options.forwardKey.setPressed(false);
+            mc.options.backKey.setPressed(false);
+            mc.options.leftKey.setPressed(false);
+            mc.options.rightKey.setPressed(false);
+            mc.options.jumpKey.setPressed(false);
+            mc.options.sneakKey.setPressed(false);
+            mc.options.sprintKey.setPressed(false);
+            mc.options.attackKey.setPressed(false);
+            mc.options.useKey.setPressed(false);
         }
     }
 
@@ -706,9 +737,6 @@ public final class ZyonModules {
                 fcX = p.getX();
                 fcY = p.getEyeY();
                 fcZ = p.getZ();
-                fcPlayerX = p.getX();
-                fcPlayerY = p.getY();
-                fcPlayerZ = p.getZ();
                 st.setPosition(fcX, fcY - st.getEyeHeight(EntityPose.STANDING), fcZ);
                 st.setYaw(p.getYaw());
                 st.setPitch(p.getPitch());
@@ -722,14 +750,9 @@ public final class ZyonModules {
             return;
         }
         if (mc.currentScreen == null) {
-            // Leia as teclas vanilla diretamente; os KeyBindings customizados
-            // usam as mesmas teclas e entravam em conflito com o movimento.
-            double fwd = (mc.options.forwardKey.isPressed() ? 1 : 0)
-                    - (mc.options.backKey.isPressed() ? 1 : 0);
-            double str = (mc.options.rightKey.isPressed() ? 1 : 0)
-                    - (mc.options.leftKey.isPressed() ? 1 : 0);
-            double vert = (mc.options.jumpKey.isPressed() ? 1 : 0)
-                    - (mc.options.sneakKey.isPressed() ? 1 : 0);
+            double fwd = (ZyonClient.fcForward.isPressed() ? 1 : 0) - (ZyonClient.fcBack.isPressed() ? 1 : 0);
+            double str = (ZyonClient.fcRight.isPressed() ? 1 : 0) - (ZyonClient.fcLeft.isPressed() ? 1 : 0);
+            double vert = (ZyonClient.fcUp.isPressed() ? 1 : 0) - (ZyonClient.fcDown.isPressed() ? 1 : 0);
             double yaw = Math.toRadians(p.getYaw());
             double mx = -Math.sin(yaw) * fwd - Math.cos(yaw) * str;
             double mz = Math.cos(yaw) * fwd - Math.sin(yaw) * str;
@@ -743,9 +766,6 @@ public final class ZyonModules {
             fcZ += mz * spd;
             fcY += vert * spd;
         }
-        // Mantem o corpo no ponto de ativacao enquanto a camera se desloca.
-        p.setPosition(fcPlayerX, fcPlayerY, fcPlayerZ);
-        p.setVelocity(Vec3d.ZERO);
         fcStand.setPosition(fcX, fcY - fcStand.getEyeHeight(EntityPose.STANDING), fcZ);
         fcStand.setYaw(p.getYaw());
         fcStand.setPitch(p.getPitch());

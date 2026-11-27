@@ -28,7 +28,7 @@ public final class DiscoverySettings {
     public int selfProtection = 70;      // % de reducao por encantamentos (so na estimativa)
     public boolean antiSuicide = true;   // nao age se a estimativa mata voce
     public boolean cpvpPlayersOnly = true;
-    public int cpvpSpeed = 10;           // 1..10 (10 = ciclo mais rapido)
+    public int cpvpSpeed = 6;            // 1..10 (barra de velocidade)
 
     // Combate 2
     public boolean triggerBot = false;
@@ -47,10 +47,10 @@ public final class DiscoverySettings {
     public boolean autoRespawn = false;
     public boolean autoBridge = false;
     public boolean nuker = false;
-    public int nukerRange = 5;
+    public int nukerRange = 6;
     public boolean nukerAutoTool = true;
     public boolean nukerOres = false;
-    public int nukerPerTick = 1;         // so vale no criativo
+    public int nukerPerTick = 100;       // blocos por tick (criativo / blocos que quebram na hora)
     public int bridgeSpeed = 8;          // 1..10
     public boolean fullbright = false;
 
@@ -103,7 +103,7 @@ public final class DiscoverySettings {
     public int espRange = 64;
     public boolean zoom = false;
     public boolean freecam = false;
-    public int freecamSpeed = 6;
+    public int freecamSpeed = 4;
     public boolean xray = false;
     public boolean xrayRare = true;
     public int xrayRange = 16;

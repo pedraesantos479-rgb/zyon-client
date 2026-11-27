@@ -102,8 +102,8 @@ public final class ZyonScreen extends Screen {
                         () -> s.cpvpPlayersOnly = !s.cpvpPlayersOnly));
                 r.add(slider("Velocidade", 1, 10, 1, () -> s.cpvpSpeed, v -> s.cpvpSpeed = v, v -> v + "/10"));
                 r.add(slider("Alcance", 3, 6, 1, () -> s.crystalRange, v -> s.crystalRange = v, v -> v + " bl"));
-                r.add(slider("Dano minimo", 1, 20, 1, () -> s.minTargetDamage, v -> s.minTargetDamage = v, v -> v + " hp"));
-                r.add(slider("Dano max (voce)", 0, 100, 5, () -> s.maxSelfDamage, v -> s.maxSelfDamage = v,
+                r.add(slider("Dano minimo", 1, 12, 1, () -> s.minTargetDamage, v -> s.minTargetDamage = v, v -> v + " hp"));
+                r.add(slider("Dano max (voce)", 0, 40, 2, () -> s.maxSelfDamage, v -> s.maxSelfDamage = v,
                         v -> v == 0 ? "sem limite" : v + " hp"));
                 r.add(slider("Protecao armadura", 0, 80, 10, () -> s.selfProtection, v -> s.selfProtection = v, v -> v + "%"));
                 r.add(toggle("Anti suicida", "Nao age se te mataria", () -> s.antiSuicide, () -> s.antiSuicide = !s.antiSuicide));
@@ -123,10 +123,10 @@ public final class ZyonScreen extends Screen {
             }
             case 3 -> {
                 r.add(toggle("Nuker", "Quebra blocos perto", () -> s.nuker, () -> s.nuker = !s.nuker));
-                r.add(slider("Alcance Nuker", 1, 6, 1, () -> s.nukerRange, v -> s.nukerRange = v, v -> v + " bl"));
+                r.add(slider("Alcance Nuker", 1, 16, 1, () -> s.nukerRange, v -> s.nukerRange = v, v -> v + " bl"));
                 r.add(toggle("Nuker so minerios", "Ignora pedra e terra", () -> s.nukerOres, () -> s.nukerOres = !s.nukerOres));
                 r.add(toggle("Auto ferramenta", "Troca p/ a melhor", () -> s.nukerAutoTool, () -> s.nukerAutoTool = !s.nukerAutoTool));
-                r.add(slider("Blocos por tick", 1, 6, 1, () -> s.nukerPerTick, v -> s.nukerPerTick = v, v -> v + " (criativo)"));
+                r.add(slider("Blocos por tick", 1, 300, 1, () -> s.nukerPerTick, v -> s.nukerPerTick = v, v -> v + "/tick"));
                 r.add(toggle("Freecam", "Camera livre", () -> s.freecam, () -> s.freecam = !s.freecam));
                 r.add(slider("Velocidade freecam", 1, 10, 1, () -> s.freecamSpeed, v -> s.freecamSpeed = v, v -> v + "/10"));
                 r.add(toggle("X-Ray", "Marca minerios na parede", () -> s.xray, () -> s.xray = !s.xray));
