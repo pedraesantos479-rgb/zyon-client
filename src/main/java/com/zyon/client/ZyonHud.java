@@ -68,6 +68,7 @@ public final class ZyonHud {
         if (s.comboHud) info.add("Combo: " + ZyonModules.combo);
         if (s.reachHud) info.add(String.format(Locale.ROOT, "Reach: %.2f", ZyonModules.lastReach));
         if (s.critHud) info.add(ZyonModules.critReady ? "CRIT: pronto" : "CRIT: --");
+        if (s.autoCrystal || s.cpvpAll) info.add("Crystal: " + ZyonModules.crystalStatus);
         for (String l : info) {
             ctx.drawText(tr, l, 4, y, TEXT, true);
             y += 10;
@@ -221,6 +222,7 @@ public final class ZyonHud {
         if (s.autoBridge) l.add("AutoBridge");
         if (s.xray) l.add("X-Ray");
         if (s.nuker) l.add("Nuker");
+        if (s.freecam) l.add("Freecam");
         if (s.cpvpAll) l.add("CPvP");
         if (s.triggerBot) l.add("TriggerBot");
         if (s.autoClicker) l.add("AutoClicker");

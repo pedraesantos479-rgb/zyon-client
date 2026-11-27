@@ -15,8 +15,7 @@ import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 
 public final class ZyonScreen extends Screen {
-    private static final int W = 410, H = 240, HEADER = 34, SIDE = 88, ROW_H = 28, PER_COL = 7;
-    private static final int TAB_STEP = 27, TAB_H = 22;
+    private static final int HEADER = 34, SIDE = 88, ROW_H = 28, FOOT = 18;
     private static final int BG = 0xF00B0E17;
     private static final int SIDEBG = 0xFF0F1320;
     private static final int CARD = 0xFF161B2B;
@@ -27,13 +26,18 @@ public final class ZyonScreen extends Screen {
     private static final int OFF = 0xFF3A4156;
     private static final int TEXT = 0xFFE6E9F2;
     private static final int DIM = 0xFF7F889D;
-    private static final String[] TABS = {"Combate", "Crystal", "Jogador", "Visual", "HUD", "CPvP HUD", "Scanner"};
-    private static final String[] ICONS = {"C", "X", "J", "V", "H", "P", "S"};
+    private static final String[] TABS = {"Combate", "Crystal", "Jogador", "Mundo", "Visual", "HUD", "CPvP HUD", "Scanner"};
+    private static final String[] ICONS = {"C", "X", "J", "M", "V", "H", "P", "S"};
     private static final int[] ICON_COLORS = {
-            0xFFEF4444, 0xFFF97316, 0xFF34D399, 0xFF60A5FA, 0xFFFBBF24, 0xFFF472B6, 0xFFA78BFA};
+            0xFFEF4444, 0xFFF97316, 0xFF34D399, 0xFF22D3EE, 0xFF60A5FA, 0xFFFBBF24, 0xFFF472B6, 0xFFA78BFA};
 
     private static int tab = 0;
-    private int left, top;
+    private static int page = 0;
+
+    private int left, top, W, H;
+    private int perCol, perPage, tabStep, tabH;
+    private Row activeSlider;
+    private int activeCx, activeCw;
 
     private static final class Row {
         final String name, desc;
@@ -102,6 +106,7 @@ public final class ZyonScreen extends Screen {
                 r.add(slider("Dano max (voce)", 0, 40, 2, () -> s.maxSelfDamage, v -> s.maxSelfDamage = v,
                         v -> v == 0 ? "sem limite" : v + " hp"));
                 r.add(slider("Protecao armadura", 0, 80, 10, () -> s.selfProtection, v -> s.selfProtection = v, v -> v + "%"));
+                r.add(toggle("Anti suicida", "Nao age se te mataria", () -> s.antiSuicide, () -> s.antiSuicide = !s.antiSuicide));
                 r.add(toggle("Auto Totem", "Totem na mao", () -> s.autoTotem, () -> s.autoTotem = !s.autoTotem));
                 r.add(slider("Totem quando", 0, 20, 2, () -> s.totemHealth, v -> s.totemHealth = v,
                         v -> v == 0 ? "sempre" : "<= " + v));
@@ -115,14 +120,22 @@ public final class ZyonScreen extends Screen {
                 r.add(toggle("Auto Respawn", "Renasce sozinho", () -> s.autoRespawn, () -> s.autoRespawn = !s.autoRespawn));
                 r.add(toggle("Fullbright", "Ve no escuro", () -> s.fullbright, () -> s.fullbright = !s.fullbright));
                 r.add(toggle("Zoom", "Segure a tecla C", () -> s.zoom, () -> s.zoom = !s.zoom));
-                r.add(toggle("Auto Bridge", "Bloco embaixo na ponte", () -> s.autoBridge, () -> s.autoBridge = !s.autoBridge));
-                r.add(slider("Velocidade ponte", 1, 10, 1, () -> s.bridgeSpeed, v -> s.bridgeSpeed = v, v -> v + "/10"));
-                r.add(toggle("Nuker", "Quebra blocos perto", () -> s.nuker, () -> s.nuker = !s.nuker));
-                r.add(slider("Alcance Nuker", 1, 5, 1, () -> s.nukerRange, v -> s.nukerRange = v, v -> v + " bl"));
-                r.add(toggle("Nuker so minerios", "Ignora pedra e terra", () -> s.nukerOres, () -> s.nukerOres = !s.nukerOres));
-                r.add(slider("Blocos por tick", 1, 6, 1, () -> s.nukerPerTick, v -> s.nukerPerTick = v, v -> v + " (criativo)"));
             }
             case 3 -> {
+                r.add(toggle("Nuker", "Quebra blocos perto", () -> s.nuker, () -> s.nuker = !s.nuker));
+                r.add(slider("Alcance Nuker", 1, 6, 1, () -> s.nukerRange, v -> s.nukerRange = v, v -> v + " bl"));
+                r.add(toggle("Nuker so minerios", "Ignora pedra e terra", () -> s.nukerOres, () -> s.nukerOres = !s.nukerOres));
+                r.add(toggle("Auto ferramenta", "Troca p/ a melhor", () -> s.nukerAutoTool, () -> s.nukerAutoTool = !s.nukerAutoTool));
+                r.add(slider("Blocos por tick", 1, 6, 1, () -> s.nukerPerTick, v -> s.nukerPerTick = v, v -> v + " (criativo)"));
+                r.add(toggle("Freecam", "Camera livre", () -> s.freecam, () -> s.freecam = !s.freecam));
+                r.add(slider("Velocidade freecam", 1, 10, 1, () -> s.freecamSpeed, v -> s.freecamSpeed = v, v -> v + "/10"));
+                r.add(toggle("X-Ray", "Marca minerios na parede", () -> s.xray, () -> s.xray = !s.xray));
+                r.add(toggle("X-Ray so raros", "Diamante, debris, ouro", () -> s.xrayRare, () -> s.xrayRare = !s.xrayRare));
+                r.add(slider("Alcance X-Ray", 8, 24, 4, () -> s.xrayRange, v -> s.xrayRange = v, v -> v + " bl"));
+                r.add(toggle("Auto Bridge", "Bloco embaixo na ponte", () -> s.autoBridge, () -> s.autoBridge = !s.autoBridge));
+                r.add(slider("Velocidade ponte", 1, 10, 1, () -> s.bridgeSpeed, v -> s.bridgeSpeed = v, v -> v + "/10"));
+            }
+            case 4 -> {
                 r.add(toggle("ESP Jogadores", "Caixa nos jogadores", () -> s.playerEsp, () -> s.playerEsp = !s.playerEsp));
                 r.add(toggle("ESP Entidades", "Mobs e animais", () -> s.entityEsp, () -> s.entityEsp = !s.entityEsp));
                 r.add(toggle("ESP Itens", "Itens no chao", () -> s.itemEsp, () -> s.itemEsp = !s.itemEsp));
@@ -132,13 +145,10 @@ public final class ZyonScreen extends Screen {
                 r.add(toggle("Name Tags", "Nome, vida e distancia", () -> s.nameTags, () -> s.nameTags = !s.nameTags));
                 r.add(toggle("Hitbox", "Caixa 3D do alvo", () -> s.hitboxViz, () -> s.hitboxViz = !s.hitboxViz));
                 r.add(slider("Alcance ESP", 32, 128, 16, () -> s.espRange, v -> s.espRange = v, v -> v + " bl"));
-                r.add(toggle("X-Ray", "Marca minerios na parede", () -> s.xray, () -> s.xray = !s.xray));
-                r.add(toggle("X-Ray so raros", "Diamante, debris, ouro", () -> s.xrayRare, () -> s.xrayRare = !s.xrayRare));
-                r.add(slider("Alcance X-Ray", 8, 24, 4, () -> s.xrayRange, v -> s.xrayRange = v, v -> v + " bl"));
                 r.add(toggle("HUD modulos", "Lista de ativos", () -> s.hudModules, () -> s.hudModules = !s.hudModules));
                 r.add(toggle("Mira custom", "Mira colorida", () -> s.customCrosshair, () -> s.customCrosshair = !s.customCrosshair));
             }
-            case 4 -> {
+            case 5 -> {
                 r.add(toggle("FPS", "Quadros por segundo", () -> s.hudFps, () -> s.hudFps = !s.hudFps));
                 r.add(toggle("Ping", "Latencia do servidor", () -> s.hudPing, () -> s.hudPing = !s.hudPing));
                 r.add(toggle("Coordenadas", "Posicao XYZ", () -> s.hudCoords, () -> s.hudCoords = !s.hudCoords));
@@ -153,7 +163,7 @@ public final class ZyonScreen extends Screen {
                 r.add(toggle("Efeitos", "Efeitos de pocao", () -> s.hudEffects, () -> s.hudEffects = !s.hudEffects));
                 r.add(toggle("Inventario", "Itens do inventario", () -> s.hudInventory, () -> s.hudInventory = !s.hudInventory));
             }
-            case 5 -> {
+            case 6 -> {
                 r.add(toggle("Crystals", "Conta seus crystals", () -> s.cntCrystals, () -> s.cntCrystals = !s.cntCrystals));
                 r.add(toggle("Totems", "Conta seus totems", () -> s.cntTotems, () -> s.cntTotems = !s.cntTotems));
                 r.add(toggle("Obsidian", "Conta obsidian", () -> s.cntObsidian, () -> s.cntObsidian = !s.cntObsidian));
@@ -184,12 +194,13 @@ public final class ZyonScreen extends Screen {
 
     public ZyonScreen() { super(Text.literal("Zyon Client")); }
 
-    private int cardX(int i, int cw) { return left + SIDE + 8 + (i / PER_COL) * (cw + 6); }
-    private int cardY(int i) { return top + HEADER + 8 + (i % PER_COL) * ROW_H; }
     private int cardW() { return (W - SIDE - 16 - 6) / 2; }
+    private int cardX(int j) { return left + SIDE + 8 + (j / perCol) * (cardW() + 6); }
+    private int cardY(int j) { return top + HEADER + 8 + (j % perCol) * ROW_H; }
 
-    /** Toque na barra: le a posicao do dedo e acha o valor. */
-    private void sliderTap(Row row, int cx, int cw) {
+    private int pages(int n) { return Math.max(1, (n + perPage - 1) / perPage); }
+
+    private void sliderSet(Row row, int cx, int cw) {
         MinecraftClient mc = MinecraftClient.getInstance();
         double mx = mc.mouse.getX() * mc.getWindow().getScaledWidth() / (double) mc.getWindow().getWidth();
         double frac = (mx - (cx + 8)) / (double) (cw - 16);
@@ -201,24 +212,48 @@ public final class ZyonScreen extends Screen {
 
     @Override
     protected void init() {
+        W = Math.min(430, width - 12);
+        H = Math.min(250, height - 12);
         left = (width - W) / 2;
         top = (height - H) / 2;
+        perCol = Math.max(3, (H - HEADER - 8 - FOOT) / ROW_H);
+        perPage = perCol * 2;
+        tabStep = Math.max(18, Math.min(26, (H - HEADER - 12) / TABS.length));
+        tabH = tabStep - 3;
+
         // botoes invisiveis (so recebem o toque); o visual e desenhado em render()
         for (int i = 0; i < TABS.length; i++) {
             final int idx = i;
-            addDrawableChild(ButtonWidget.builder(Text.empty(), b -> { tab = idx; clearAndInit(); })
-                    .dimensions(left + 6, top + HEADER + 8 + i * TAB_STEP, SIDE - 12, TAB_H).build());
+            addDrawableChild(ButtonWidget.builder(Text.empty(), b -> { tab = idx; page = 0; clearAndInit(); })
+                    .dimensions(left + 6, top + HEADER + 8 + i * tabStep, SIDE - 12, tabH).build());
         }
         List<Row> rows = rows();
+        int pgs = pages(rows.size());
+        if (page >= pgs) page = pgs - 1;
         int cw = cardW();
-        for (int i = 0; i < rows.size(); i++) {
+        int start = page * perPage;
+        for (int i = start; i < Math.min(rows.size(), start + perPage); i++) {
             final Row row = rows.get(i);
-            final int cx = cardX(i, cw);
+            final int j = i - start;
+            final int cx = cardX(j);
             addDrawableChild(ButtonWidget.builder(Text.empty(), b -> {
-                        if (row.geti != null) sliderTap(row, cx, cw);
-                        else row.click.run();
+                        if (row.geti != null) {
+                            activeSlider = row;
+                            activeCx = cx;
+                            activeCw = cw;
+                            sliderSet(row, cx, cw);
+                        } else {
+                            row.click.run();
+                        }
                     })
-                    .dimensions(cx, cardY(i), cw, ROW_H - 3).build());
+                    .dimensions(cx, cardY(j), cw, ROW_H - 3).build());
+        }
+        if (pgs > 1) {
+            int fy = top + H - FOOT;
+            addDrawableChild(ButtonWidget.builder(Text.empty(), b -> { page = Math.max(0, page - 1); clearAndInit(); })
+                    .dimensions(left + W - 84, fy, 24, 14).build());
+            addDrawableChild(ButtonWidget.builder(Text.empty(), b -> { page = Math.min(pgs - 1, page + 1); clearAndInit(); })
+                    .dimensions(left + W - 30, fy, 24, 14).build());
         }
     }
 
@@ -231,6 +266,15 @@ public final class ZyonScreen extends Screen {
 
     @Override
     public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
+        // arrastar a barra enquanto o dedo/botao esta pressionado
+        if (activeSlider != null) {
+            if (MinecraftClient.getInstance().mouse.wasLeftButtonClicked()) {
+                sliderSet(activeSlider, activeCx, activeCw);
+            } else {
+                activeSlider = null;
+            }
+        }
+
         super.render(ctx, mouseX, mouseY, delta);
 
         int x0 = left, y0 = top;
@@ -253,26 +297,30 @@ public final class ZyonScreen extends Screen {
 
         ctx.fill(x0 + 1, y0 + HEADER + 1, x0 + SIDE, y0 + H - 1, SIDEBG);
         for (int i = 0; i < TABS.length; i++) {
-            int tx = x0 + 6, ty = y0 + HEADER + 8 + i * TAB_STEP, tw = SIDE - 12;
+            int tx = x0 + 6, ty = y0 + HEADER + 8 + i * tabStep, tw = SIDE - 12;
             boolean sel = i == tab;
-            boolean hov = mouseX >= tx && mouseX < tx + tw && mouseY >= ty && mouseY < ty + TAB_H;
-            ctx.fill(tx, ty, tx + tw, ty + TAB_H, sel ? 0xFF241C4A : (hov ? 0xFF1A2036 : SIDEBG));
-            if (sel) ctx.fill(tx, ty, tx + 2, ty + TAB_H, ACCENT);
-            ctx.fill(tx + 8, ty + 5, tx + 20, ty + 17, ICON_COLORS[i]);
-            ctx.drawText(textRenderer, ICONS[i], tx + 12, ty + 7, 0xFF0B0E17, false);
-            ctx.drawText(textRenderer, TABS[i], tx + 26, ty + 7, sel ? TEXT : DIM, false);
+            boolean hov = mouseX >= tx && mouseX < tx + tw && mouseY >= ty && mouseY < ty + tabH;
+            ctx.fill(tx, ty, tx + tw, ty + tabH, sel ? 0xFF241C4A : (hov ? 0xFF1A2036 : SIDEBG));
+            if (sel) ctx.fill(tx, ty, tx + 2, ty + tabH, ACCENT);
+            int iy = ty + (tabH - 12) / 2;
+            ctx.fill(tx + 8, iy, tx + 20, iy + 12, ICON_COLORS[i]);
+            ctx.drawText(textRenderer, ICONS[i], tx + 12, iy + 2, 0xFF0B0E17, false);
+            ctx.drawText(textRenderer, TABS[i], tx + 26, iy + 2, sel ? TEXT : DIM, false);
         }
 
         List<Row> rows = rows();
+        int pgs = pages(rows.size());
+        if (page >= pgs) page = pgs - 1;
         int cw = cardW();
-        for (int i = 0; i < rows.size(); i++) {
+        int start = page * perPage;
+        for (int i = start; i < Math.min(rows.size(), start + perPage); i++) {
             Row row = rows.get(i);
-            int cx = cardX(i, cw), cy = cardY(i), ch = ROW_H - 3;
+            int j = i - start;
+            int cx = cardX(j), cy = cardY(j), ch = ROW_H - 3;
             boolean hov = mouseX >= cx && mouseX < cx + cw && mouseY >= cy && mouseY < cy + ch;
             ctx.fill(cx, cy, cx + cw, cy + ch, hov ? CARD_HOVER : CARD);
 
             if (row.geti != null) {
-                // barra de ajuste
                 int v = row.geti.getAsInt();
                 ctx.fill(cx, cy, cx + 2, cy + ch, ACCENT);
                 String vs = row.fmt.apply(v);
@@ -310,7 +358,19 @@ public final class ZyonScreen extends Screen {
             ctx.drawText(textRenderer, textRenderer.trimToWidth(row.name, maxText), cx + 8, cy + 4, TEXT, false);
             ctx.drawText(textRenderer, textRenderer.trimToWidth(row.desc, maxText), cx + 8, cy + 14, DIM, false);
         }
-        ctx.drawText(textRenderer, "ESC - fechar    toque nas barras para ajustar", x0 + SIDE + 8, y0 + H - 12, DIM, false);
+
+        int fy = y0 + H - FOOT;
+        ctx.drawText(textRenderer, "ESC fecha  |  arraste as barras", x0 + SIDE + 8, fy + 3, DIM, false);
+        if (pgs > 1) {
+            boolean h1 = mouseX >= x0 + W - 84 && mouseX < x0 + W - 60 && mouseY >= fy && mouseY < fy + 14;
+            boolean h2 = mouseX >= x0 + W - 30 && mouseX < x0 + W - 6 && mouseY >= fy && mouseY < fy + 14;
+            ctx.fill(x0 + W - 84, fy, x0 + W - 60, fy + 14, h1 ? CARD_HOVER : CARD);
+            ctx.fill(x0 + W - 30, fy, x0 + W - 6, fy + 14, h2 ? CARD_HOVER : CARD);
+            ctx.drawText(textRenderer, "<", x0 + W - 74, fy + 3, ACCENT_LIGHT, false);
+            ctx.drawText(textRenderer, ">", x0 + W - 20, fy + 3, ACCENT_LIGHT, false);
+            String pg = (page + 1) + "/" + pgs;
+            ctx.drawText(textRenderer, pg, x0 + W - 57 + (27 - textRenderer.getWidth(pg)) / 2 - 3, fy + 3, TEXT, false);
+        }
     }
 
     @Override

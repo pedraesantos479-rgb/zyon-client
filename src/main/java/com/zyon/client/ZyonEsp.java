@@ -169,12 +169,13 @@ public final class ZyonEsp {
         sh = mc.getWindow().getScaledHeight();
         tracerCount = 0;
 
-        Vec3d lp = p.getLerpedPos(delta);
+        Entity cam = mc.getCameraEntity() != null ? mc.getCameraEntity() : p;
+        Vec3d lp = cam.getLerpedPos(delta);
         cx = lp.x;
-        cy = lp.y + p.getEyeHeight(p.getPose());
+        cy = lp.y + cam.getEyeHeight(cam.getPose());
         cz = lp.z;
-        double yaw = Math.toRadians(p.getYaw());
-        double pit = Math.toRadians(p.getPitch());
+        double yaw = Math.toRadians(cam.getYaw());
+        double pit = Math.toRadians(cam.getPitch());
         fx = -Math.sin(yaw) * Math.cos(pit);
         fy = -Math.sin(pit);
         fz = Math.cos(yaw) * Math.cos(pit);

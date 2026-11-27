@@ -25,7 +25,8 @@ public final class DiscoverySettings {
     public boolean cpvpAll = false;      // crystal + obsidian + totem juntos
     public int minTargetDamage = 4;
     public int maxSelfDamage = 0;        // 0 = sem limite
-    public int selfProtection = 60;      // % de reducao por encantamentos (so na estimativa)
+    public int selfProtection = 70;      // % de reducao por encantamentos (so na estimativa)
+    public boolean antiSuicide = true;   // nao age se a estimativa mata voce
     public boolean cpvpPlayersOnly = true;
     public int cpvpSpeed = 6;            // 1..10 (barra de velocidade)
 
@@ -46,7 +47,8 @@ public final class DiscoverySettings {
     public boolean autoRespawn = false;
     public boolean autoBridge = false;
     public boolean nuker = false;
-    public int nukerRange = 4;
+    public int nukerRange = 5;
+    public boolean nukerAutoTool = true;
     public boolean nukerOres = false;
     public int nukerPerTick = 1;         // so vale no criativo
     public int bridgeSpeed = 8;          // 1..10
@@ -100,6 +102,8 @@ public final class DiscoverySettings {
     public boolean hitboxViz = false;
     public int espRange = 64;
     public boolean zoom = false;
+    public boolean freecam = false;
+    public int freecamSpeed = 4;
     public boolean xray = false;
     public boolean xrayRare = true;
     public int xrayRange = 16;

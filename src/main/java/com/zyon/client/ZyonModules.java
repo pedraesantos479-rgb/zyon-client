@@ -11,6 +11,9 @@ import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityPose;
+import net.minecraft.entity.EntityType;
+import net.minecraft.entity.decoration.ArmorStandEntity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.decoration.EndCrystalEntity;
 import net.minecraft.entity.effect.StatusEffectInstance;
@@ -44,6 +47,12 @@ public final class ZyonModules {
     private static int totemTimer;
     private static int bridgeTimer;
     private static BlockPos nukerTarget;
+    private static int nukerPrevSlot = -1;
+    public static String crystalStatus = "-";
+    private static ArmorStandEntity fcStand;
+    private static ClientWorld fcWorld;
+    private static double fcX, fcY, fcZ;
+    private static final int FC_ID = -8421;
     private static int clickTimer;
     private static int refillTimer;
     private static final Item[] lastHotbar = new Item[9];
@@ -95,6 +104,7 @@ public final class ZyonModules {
         ZyonEsp.tickScan(mc, p, w, s);
         ZyonEsp.tickXray(p, w, s);
         zoom(mc, s);
+        freecamTick(mc, p, w, s);
         autoRefill(mc, p, s);
 
         if (mc.currentScreen != null || mc.interactionManager == null) {
@@ -336,14 +346,24 @@ public final class ZyonModules {
     }
 
     private static void autoCrystal(MinecraftClient mc, ClientPlayerEntity p, ClientWorld w, DiscoverySettings s) {
-        if (!(s.autoCrystal || s.cpvpAll)) return;
+        if (!(s.autoCrystal || s.cpvpAll)) {
+            crystalStatus = "-";
+            return;
+        }
         if (crystalTimer-- > 0) return;
         crystalTimer = delayTicks(s.cpvpSpeed);
         double placeRange = Math.min(s.crystalRange, 4.5);
         double breakRange = Math.min(s.crystalRange, 4.0);
 
         LivingEntity target = nearestLiving(p, w, 10, s.cpvpPlayersOnly);
-        if (target == null) return;
+        if (target == null) {
+            crystalStatus = s.cpvpPlayersOnly ? "sem jogador a 10 blocos" : "sem alvo a 10 blocos";
+            return;
+        }
+        if (p.isUsingItem()) {
+            crystalStatus = "pausado (usando item)";
+            return;
+        }
 
         // 1) quebra o crystal que mais machuca o alvo (e e seguro pra voce)
         List<EndCrystalEntity> crystals = w.getEntitiesByClass(EndCrystalEntity.class,
@@ -351,8 +371,12 @@ public final class ZyonModules {
                 c -> c.isAlive() && p.distanceTo(c) <= breakRange);
         EndCrystalEntity bestC = null;
         double bestScore = -1e9;
+        int unsafe = 0;
         for (EndCrystalEntity c : crystals) {
-            if (!selfSafe(w, p, c.getX(), c.getY(), c.getZ(), s)) continue;
+            if (!selfSafe(w, p, c.getX(), c.getY(), c.getZ(), s)) {
+                unsafe++;
+                continue;
+            }
             double score = explosionDamage(w, target, c.getX(), c.getY(), c.getZ());
             if (score > bestScore) {
                 bestScore = score;
@@ -364,29 +388,38 @@ public final class ZyonModules {
             mc.interactionManager.attackEntity(p, bestC);
             p.swingHand(Hand.MAIN_HAND);
             markAttack();
+            crystalStatus = "quebrando";
             if (s.cpvpSpeed < 9) return;
         }
 
         // 2) coloca crystal na melhor base
         boolean offhand = p.getOffHandStack().isOf(Items.END_CRYSTAL);
         int slot = findHotbar(p, Items.END_CRYSTAL);
-        if (!offhand && slot < 0) return;
+        if (!offhand && slot < 0) {
+            crystalStatus = "sem crystal na hotbar";
+            return;
+        }
         BlockPos tp = target.getBlockPos();
         BlockPos best = null;
         double bestPlace = -1e9;
+        int bases = 0, inRange = 0, safe = 0, dmgOk = 0;
         for (int dx = -3; dx <= 3; dx++) {
             for (int dy = -2; dy <= 1; dy++) {
                 for (int dz = -3; dz <= 3; dz++) {
                     BlockPos pos = tp.add(dx, dy, dz);
                     if (!isCrystalBase(w, pos)) continue;
+                    bases++;
                     double cx = pos.getX() + 0.5;
                     double cy = pos.getY() + 1.0;
                     double cz = pos.getZ() + 0.5;
                     double dEye = Math.sqrt(sq(cx - p.getX()) + sq(cy - p.getEyeY()) + sq(cz - p.getZ()));
                     if (dEye > placeRange) continue;
+                    inRange++;
                     if (!selfSafe(w, p, cx, cy, cz, s)) continue;
+                    safe++;
                     double tdmg = explosionDamage(w, target, cx, cy, cz);
                     if (tdmg < s.minTargetDamage) continue;
+                    dmgOk++;
                     double score = tdmg - selfDamage(w, p, cx, cy, cz, s) * 0.5;
                     if (score > bestPlace) {
                         bestPlace = score;
@@ -395,13 +428,20 @@ public final class ZyonModules {
                 }
             }
         }
-        if (best == null) return;
+        if (best == null) {
+            if (bestC == null) {
+                crystalStatus = bases == 0 ? "sem base (obsidian) perto do alvo"
+                        : "bases " + bases + " | alcance " + inRange + " | seguras " + safe + " | dano ok " + dmgOk;
+            }
+            return;
+        }
         if (!offhand) selectSlot(p, slot);
         Vec3d hitVec = Vec3d.ofCenter(best).add(0, 0.5, 0);
         lookAtPoint(p, hitVec);
         Hand hand = offhand ? Hand.OFF_HAND : Hand.MAIN_HAND;
         mc.interactionManager.interactBlock(p, hand, new BlockHitResult(hitVec, Direction.UP, best, false));
         p.swingHand(hand);
+        crystalStatus = "colocando";
     }
 
     private static void lookAtPoint(ClientPlayerEntity p, Vec3d c) {
@@ -418,9 +458,11 @@ public final class ZyonModules {
     }
 
     private static boolean selfSafe(ClientWorld w, ClientPlayerEntity p, double x, double y, double z, DiscoverySettings s) {
-        if (s.maxSelfDamage == 0) return true;
         double d = selfDamage(w, p, x, y, z, s);
-        return d <= s.maxSelfDamage && d < p.getHealth() + p.getAbsorptionAmount() - 1.0;
+        double hp = p.getHealth() + p.getAbsorptionAmount();
+        if (s.antiSuicide && d >= hp) return false;
+        if (s.maxSelfDamage == 0) return true;
+        return d <= s.maxSelfDamage && d < hp - 1.0;
     }
 
     public static LivingEntity nearestLiving(ClientPlayerEntity p, ClientWorld w, double r, boolean playersOnly) {
@@ -534,11 +576,11 @@ public final class ZyonModules {
         if (s.nukerOres && !ZyonEsp.isOre(st.getBlock())) return false;
         double d = Math.sqrt(sq(pos.getX() + 0.5 - p.getX()) + sq(pos.getY() + 0.5 - p.getEyeY())
                 + sq(pos.getZ() + 0.5 - p.getZ()));
-        return d <= Math.min(s.nukerRange, 5);
+        return d <= Math.min(s.nukerRange, 6);
     }
 
     private static BlockPos nukerPick(ClientWorld w, ClientPlayerEntity p, DiscoverySettings s) {
-        int r = Math.max(1, Math.min(5, s.nukerRange));
+        int r = Math.max(1, Math.min(6, s.nukerRange));
         BlockPos base = p.getBlockPos();
         BlockPos best = null;
         double bd = 1e9;
@@ -559,23 +601,147 @@ public final class ZyonModules {
         return best;
     }
 
+    /** Troca para a melhor ferramenta da hotbar para esse bloco. */
+    private static void nukerTool(ClientPlayerEntity p, BlockState st) {
+        int bestSlot = -1;
+        float bestSpeed = p.getInventory().getStack(p.getInventory().getSelectedSlot()).getMiningSpeedMultiplier(st);
+        for (int i = 0; i < 9; i++) {
+            float sp = p.getInventory().getStack(i).getMiningSpeedMultiplier(st);
+            if (sp > bestSpeed + 0.01f) {
+                bestSpeed = sp;
+                bestSlot = i;
+            }
+        }
+        if (bestSlot >= 0) {
+            if (nukerPrevSlot < 0) nukerPrevSlot = p.getInventory().getSelectedSlot();
+            selectSlot(p, bestSlot);
+        }
+    }
+
+    private static void nukerRestore(ClientPlayerEntity p) {
+        if (nukerPrevSlot >= 0) {
+            selectSlot(p, nukerPrevSlot);
+            nukerPrevSlot = -1;
+        }
+    }
+
     private static void nuker(MinecraftClient mc, ClientPlayerEntity p, ClientWorld w, DiscoverySettings s) {
         if (!s.nuker) {
             nukerTarget = null;
+            nukerRestore(p);
             return;
         }
         boolean creative = p.isCreative();
         int count = creative ? Math.max(1, s.nukerPerTick) : 1;
         for (int k = 0; k < count; k++) {
-            if (nukerTarget == null || !nukerValid(w, p, s, nukerTarget)) nukerTarget = nukerPick(w, p, s);
-            if (nukerTarget == null) return;
+            boolean fresh = false;
+            if (nukerTarget == null || !nukerValid(w, p, s, nukerTarget)) {
+                nukerTarget = nukerPick(w, p, s);
+                fresh = true;
+            }
+            if (nukerTarget == null) {
+                nukerRestore(p);
+                return;
+            }
+            if (fresh && s.nukerAutoTool) nukerTool(p, w.getBlockState(nukerTarget));
             Direction face = Direction.getFacing(p.getX() - (nukerTarget.getX() + 0.5),
                     p.getEyeY() - (nukerTarget.getY() + 0.5), p.getZ() - (nukerTarget.getZ() + 0.5));
-            mc.interactionManager.updateBlockBreakingProgress(nukerTarget, face);
+            // o jogo espera 5 ticks entre blocos; chamar de novo "gasta" essa espera no mesmo tick
+            for (int c = 0; c < 6; c++) {
+                mc.interactionManager.updateBlockBreakingProgress(nukerTarget, face);
+                if (creative) {
+                    if (w.getBlockState(nukerTarget).isAir()) break;
+                } else if (mc.interactionManager.isBreakingBlock()) {
+                    break;
+                }
+            }
             p.swingHand(Hand.MAIN_HAND);
             if (!creative) return;       // sobrevivencia: um bloco por vez
-            nukerTarget = null;          // criativo: quebra na hora, vai pro proximo
+            nukerTarget = null;
         }
+    }
+
+    // ---------- Freecam ----------
+
+    public static void startTick(MinecraftClient mc) {
+        DiscoverySettings s = ZyonClient.SETTINGS;
+        if (s.freecam && fcStand != null && mc.currentScreen == null) {
+            // o corpo do jogador fica parado enquanto a camera voa
+            mc.options.forwardKey.setPressed(false);
+            mc.options.backKey.setPressed(false);
+            mc.options.leftKey.setPressed(false);
+            mc.options.rightKey.setPressed(false);
+            mc.options.jumpKey.setPressed(false);
+            mc.options.sneakKey.setPressed(false);
+            mc.options.sprintKey.setPressed(false);
+            mc.options.attackKey.setPressed(false);
+            mc.options.useKey.setPressed(false);
+        }
+    }
+
+    private static void freecamStop(MinecraftClient mc, ClientPlayerEntity p) {
+        if (fcStand != null && mc.getCameraEntity() == fcStand) mc.setCameraEntity(p);
+        if (fcWorld != null && fcStand != null) {
+            try {
+                fcWorld.removeEntity(FC_ID, Entity.RemovalReason.DISCARDED);
+            } catch (Throwable ignored) {
+            }
+        }
+        fcStand = null;
+        fcWorld = null;
+    }
+
+    private static void freecamTick(MinecraftClient mc, ClientPlayerEntity p, ClientWorld w, DiscoverySettings s) {
+        if (!s.freecam) {
+            if (fcStand != null) freecamStop(mc, p);
+            return;
+        }
+        if (fcStand != null && fcWorld != w) {
+            fcStand = null;
+            fcWorld = null;
+        }
+        if (fcStand == null) {
+            try {
+                ArmorStandEntity st = new ArmorStandEntity(EntityType.ARMOR_STAND, w);
+                st.setId(FC_ID);
+                st.setNoGravity(true);
+                st.setInvisible(true);
+                fcX = p.getX();
+                fcY = p.getEyeY();
+                fcZ = p.getZ();
+                st.setPosition(fcX, fcY - st.getEyeHeight(EntityPose.STANDING), fcZ);
+                st.setYaw(p.getYaw());
+                st.setPitch(p.getPitch());
+                w.addEntity(st);
+                mc.setCameraEntity(st);
+                fcStand = st;
+                fcWorld = w;
+            } catch (Throwable t) {
+                s.freecam = false;
+            }
+            return;
+        }
+        if (mc.currentScreen == null) {
+            double fwd = (ZyonClient.fcForward.isPressed() ? 1 : 0) - (ZyonClient.fcBack.isPressed() ? 1 : 0);
+            double str = (ZyonClient.fcRight.isPressed() ? 1 : 0) - (ZyonClient.fcLeft.isPressed() ? 1 : 0);
+            double vert = (ZyonClient.fcUp.isPressed() ? 1 : 0) - (ZyonClient.fcDown.isPressed() ? 1 : 0);
+            double yaw = Math.toRadians(p.getYaw());
+            double mx = -Math.sin(yaw) * fwd - Math.cos(yaw) * str;
+            double mz = Math.cos(yaw) * fwd - Math.sin(yaw) * str;
+            double len = Math.sqrt(mx * mx + mz * mz);
+            if (len > 1.0) {
+                mx /= len;
+                mz /= len;
+            }
+            double spd = 0.2 * Math.max(1, Math.min(10, s.freecamSpeed));
+            fcX += mx * spd;
+            fcZ += mz * spd;
+            fcY += vert * spd;
+        }
+        fcStand.setPosition(fcX, fcY - fcStand.getEyeHeight(EntityPose.STANDING), fcZ);
+        fcStand.setYaw(p.getYaw());
+        fcStand.setPitch(p.getPitch());
+        if (mc.getCameraEntity() != fcStand) mc.setCameraEntity(fcStand);
     }
 
     // ---------- Auto Bridge ----------

@@ -14,6 +14,7 @@ public final class ZyonClient implements ClientModInitializer {
     public static final DiscoverySettings SETTINGS = new DiscoverySettings();
     public static final DiscoveryScanner SCANNER = new DiscoveryScanner();
     public static KeyBinding zoomKey;
+    public static KeyBinding fcForward, fcBack, fcLeft, fcRight, fcUp, fcDown;
     private static KeyBinding openMenu;
 
     @Override
@@ -26,6 +27,19 @@ public final class ZyonClient implements ClientModInitializer {
                 "key.zyon.zoom", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_C,
                 KeyBinding.Category.MISC
         ));
+        fcForward = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.zyon.fc_forward", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_W, KeyBinding.Category.MISC));
+        fcBack = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.zyon.fc_back", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_S, KeyBinding.Category.MISC));
+        fcLeft = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.zyon.fc_left", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_A, KeyBinding.Category.MISC));
+        fcRight = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.zyon.fc_right", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_D, KeyBinding.Category.MISC));
+        fcUp = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.zyon.fc_up", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_SPACE, KeyBinding.Category.MISC));
+        fcDown = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.zyon.fc_down", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_LEFT_SHIFT, KeyBinding.Category.MISC));
+        ClientTickEvents.START_CLIENT_TICK.register(client -> ZyonModules.startTick(client));
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (openMenu.wasPressed()) {
                 if (client.currentScreen == null) client.setScreen(new ZyonScreen());
