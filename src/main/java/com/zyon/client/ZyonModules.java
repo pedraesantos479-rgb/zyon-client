@@ -52,6 +52,7 @@ public final class ZyonModules {
     private static ArmorStandEntity fcStand;
     private static ClientWorld fcWorld;
     private static double fcX, fcY, fcZ;
+    private static double fcPlayerX, fcPlayerY, fcPlayerZ;
     private static final int FC_ID = -8421;
     private static int clickTimer;
     private static int refillTimer;
@@ -571,6 +572,8 @@ public final class ZyonModules {
     private static boolean nukerValid(ClientWorld w, ClientPlayerEntity p, DiscoverySettings s, BlockPos pos) {
         BlockState st = w.getBlockState(pos);
         if (st.isAir() || !st.getFluidState().isEmpty()) return false;
+        // Nunca quebre a obsidiana usada pelo Auto Obsidian/Auto Crystal.
+        if (st.isOf(Blocks.OBSIDIAN)) return false;
         if (st.getHardness(w, pos) < 0) return false;                 // bedrock etc.
         if (pos.equals(p.getBlockPos().down())) return false;         // nao quebra o chao onde voce pisa
         if (s.nukerOres && !ZyonEsp.isOre(st.getBlock())) return false;
@@ -666,16 +669,10 @@ public final class ZyonModules {
     public static void startTick(MinecraftClient mc) {
         DiscoverySettings s = ZyonClient.SETTINGS;
         if (s.freecam && fcStand != null && mc.currentScreen == null) {
-            // o corpo do jogador fica parado enquanto a camera voa
-            mc.options.forwardKey.setPressed(false);
-            mc.options.backKey.setPressed(false);
-            mc.options.leftKey.setPressed(false);
-            mc.options.rightKey.setPressed(false);
-            mc.options.jumpKey.setPressed(false);
-            mc.options.sneakKey.setPressed(false);
-            mc.options.sprintKey.setPressed(false);
-            mc.options.attackKey.setPressed(false);
-            mc.options.useKey.setPressed(false);
+            // Nao altere o estado das teclas: WASD/Space/Shift tambem
+            // sao os controles da camera e zerar esses KeyBindings travava tudo.
+            mc.player.setVelocity(Vec3d.ZERO);
+            mc.player.setSprinting(false);
         }
     }
 
@@ -709,6 +706,9 @@ public final class ZyonModules {
                 fcX = p.getX();
                 fcY = p.getEyeY();
                 fcZ = p.getZ();
+                fcPlayerX = p.getX();
+                fcPlayerY = p.getY();
+                fcPlayerZ = p.getZ();
                 st.setPosition(fcX, fcY - st.getEyeHeight(EntityPose.STANDING), fcZ);
                 st.setYaw(p.getYaw());
                 st.setPitch(p.getPitch());
@@ -722,9 +722,14 @@ public final class ZyonModules {
             return;
         }
         if (mc.currentScreen == null) {
-            double fwd = (ZyonClient.fcForward.isPressed() ? 1 : 0) - (ZyonClient.fcBack.isPressed() ? 1 : 0);
-            double str = (ZyonClient.fcRight.isPressed() ? 1 : 0) - (ZyonClient.fcLeft.isPressed() ? 1 : 0);
-            double vert = (ZyonClient.fcUp.isPressed() ? 1 : 0) - (ZyonClient.fcDown.isPressed() ? 1 : 0);
+            // Leia as teclas vanilla diretamente; os KeyBindings customizados
+            // usam as mesmas teclas e entravam em conflito com o movimento.
+            double fwd = (mc.options.forwardKey.isPressed() ? 1 : 0)
+                    - (mc.options.backKey.isPressed() ? 1 : 0);
+            double str = (mc.options.rightKey.isPressed() ? 1 : 0)
+                    - (mc.options.leftKey.isPressed() ? 1 : 0);
+            double vert = (mc.options.jumpKey.isPressed() ? 1 : 0)
+                    - (mc.options.sneakKey.isPressed() ? 1 : 0);
             double yaw = Math.toRadians(p.getYaw());
             double mx = -Math.sin(yaw) * fwd - Math.cos(yaw) * str;
             double mz = Math.cos(yaw) * fwd - Math.sin(yaw) * str;
@@ -738,6 +743,9 @@ public final class ZyonModules {
             fcZ += mz * spd;
             fcY += vert * spd;
         }
+        // Mantem o corpo no ponto de ativacao enquanto a camera se desloca.
+        p.setPosition(fcPlayerX, fcPlayerY, fcPlayerZ);
+        p.setVelocity(Vec3d.ZERO);
         fcStand.setPosition(fcX, fcY - fcStand.getEyeHeight(EntityPose.STANDING), fcZ);
         fcStand.setYaw(p.getYaw());
         fcStand.setPitch(p.getPitch());

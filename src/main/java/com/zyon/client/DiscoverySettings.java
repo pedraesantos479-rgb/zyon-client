@@ -28,7 +28,7 @@ public final class DiscoverySettings {
     public int selfProtection = 70;      // % de reducao por encantamentos (so na estimativa)
     public boolean antiSuicide = true;   // nao age se a estimativa mata voce
     public boolean cpvpPlayersOnly = true;
-    public int cpvpSpeed = 6;            // 1..10 (barra de velocidade)
+    public int cpvpSpeed = 10;           // 1..10 (10 = ciclo mais rapido)
 
     // Combate 2
     public boolean triggerBot = false;
@@ -103,7 +103,7 @@ public final class DiscoverySettings {
     public int espRange = 64;
     public boolean zoom = false;
     public boolean freecam = false;
-    public int freecamSpeed = 4;
+    public int freecamSpeed = 6;
     public boolean xray = false;
     public boolean xrayRare = true;
     public int xrayRange = 16;

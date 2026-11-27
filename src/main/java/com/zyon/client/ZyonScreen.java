@@ -102,8 +102,8 @@ public final class ZyonScreen extends Screen {
                         () -> s.cpvpPlayersOnly = !s.cpvpPlayersOnly));
                 r.add(slider("Velocidade", 1, 10, 1, () -> s.cpvpSpeed, v -> s.cpvpSpeed = v, v -> v + "/10"));
                 r.add(slider("Alcance", 3, 6, 1, () -> s.crystalRange, v -> s.crystalRange = v, v -> v + " bl"));
-                r.add(slider("Dano minimo", 1, 12, 1, () -> s.minTargetDamage, v -> s.minTargetDamage = v, v -> v + " hp"));
-                r.add(slider("Dano max (voce)", 0, 40, 2, () -> s.maxSelfDamage, v -> s.maxSelfDamage = v,
+                r.add(slider("Dano minimo", 1, 20, 1, () -> s.minTargetDamage, v -> s.minTargetDamage = v, v -> v + " hp"));
+                r.add(slider("Dano max (voce)", 0, 100, 5, () -> s.maxSelfDamage, v -> s.maxSelfDamage = v,
                         v -> v == 0 ? "sem limite" : v + " hp"));
                 r.add(slider("Protecao armadura", 0, 80, 10, () -> s.selfProtection, v -> s.selfProtection = v, v -> v + "%"));
                 r.add(toggle("Anti suicida", "Nao age se te mataria", () -> s.antiSuicide, () -> s.antiSuicide = !s.antiSuicide));
